@@ -1,0 +1,38 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" uid="uid://blecfhkydiiuo" path="res://main.gd" id="1_smoke"]
+
+[node name="WebSmoke" type="Node3D"]
+script = ExtResource("1_smoke")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 128, 118, 228)
+current = true
+fov = 62.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-58, -32, 0)
+light_color = Color(0.9, 0.96, 1, 1)
+light_energy = 1.15
+shadow_enabled = false
+
+[node name="Overlay" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="ColorRect" parent="Overlay"]
+offset_left = 18.0
+offset_top = 268.0
+offset_right = 474.0
+offset_bottom = 342.0
+color = Color(0.025, 0.09, 0.085, 0.9)
+mouse_filter = 2
+
+[node name="Status" type="Label" parent="Overlay/Panel"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 8.0
+offset_right = 442.0
+offset_bottom = 66.0
+theme_override_colors/font_color = Color(0.82, 1, 0.9, 1)
+theme_override_font_sizes/font_size = 18
+text = "Loading MTerrain Web extension…"
+vertical_alignment = 1

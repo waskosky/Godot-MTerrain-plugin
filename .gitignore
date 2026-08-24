@@ -23,6 +23,10 @@ tmp/*
 *.so
 *.dylib
 *.dll
+/build/
+.godot/
+__pycache__/
+*.py[cod]
 
 # Fortran module files
 *.mod

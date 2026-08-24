@@ -71,10 +71,12 @@ void MGrid::clear() {
     grid_update_info.clear();
     remove_instance_list.clear();
     update_mesh_list.clear();
+#ifndef MTERRAIN_SINGLE_THREADED
     if(is_update_regions_future_valid && update_regions_future.valid()){
         update_regions_future.wait();
         is_update_regions_future_valid = false;
     }
+#endif
 }
 
 MGridPos MGrid::get_size() const {
@@ -772,6 +774,12 @@ void MGrid::update_regions_at_load(){
         reg->unload();
         reg->is_data_loaded_reg_thread = false;
     }
+#ifdef MTERRAIN_SINGLE_THREADED
+    for(MRegion* reg : load_region_list){
+        reg->load();
+        reg->is_data_loaded_reg_thread = true;
+    }
+#else
     Vector<std::thread*> threads_pull;
     for(MRegion* reg : load_region_list){
         std::thread* t = new std::thread(&MRegion::load,reg);
@@ -782,6 +790,7 @@ void MGrid::update_regions_at_load(){
         t->join();
         delete t;
     }
+#endif
     for(MRegion* reg : load_region_list){
         reg->correct_edges();
     }
@@ -988,6 +997,111 @@ void MGrid::set_height_by_pixel(uint32_t x,uint32_t y,const real_t value){
     }
 }
 
+bool MGrid::can_set_height_by_pixel(uint32_t x,uint32_t y) const {
+    if(!has_pixel(x,y) || !_terrain_material.is_valid()){
+        return false;
+    }
+    const int heightmap_index = _terrain_material->get_texture_id(String(HEIGHTMAP_NAME));
+    if(heightmap_index < 0){
+        return false;
+    }
+    bool ex = (x%rp == 0 && x!=0);
+    bool ey = (y%rp == 0 && y!=0);
+    const uint32_t rx = (x/rp) - (uint32_t)ex;
+    const uint32_t ry = (y/rp) - (uint32_t)ey;
+    auto region_is_ready = [heightmap_index](MRegion* region) {
+        return region != nullptr &&
+            heightmap_index < region->images.size() &&
+            region->images[heightmap_index]->is_ready_for_runtime_write();
+    };
+    if(!region_is_ready(get_region(rx,ry))){
+        return false;
+    }
+    ex = (ex && rx != (uint32_t)_region_grid_bound.right);
+    ey = (ey && ry != (uint32_t)_region_grid_bound.bottom);
+    if(ex && !region_is_ready(get_region(rx+1,ry))){
+        return false;
+    }
+    if(ey && !region_is_ready(get_region(rx,ry+1))){
+        return false;
+    }
+    if(ex && ey && !region_is_ready(get_region(rx+1,ry+1))){
+        return false;
+    }
+    return true;
+}
+
+bool MGrid::can_update_normals(uint32_t left,uint32_t right,uint32_t top,uint32_t bottom) const {
+    if(left > right || top > bottom || !_terrain_material.is_valid()){
+        return false;
+    }
+    const int heightmap_index = _terrain_material->get_texture_id(String(HEIGHTMAP_NAME));
+    const int normals_index = _terrain_material->get_texture_id(String(NORMALS_NAME));
+    if(heightmap_index < 0 || normals_index < 0){
+        return false;
+    }
+    auto region_image_is_ready = [](MRegion* region, int image_index) {
+        return region != nullptr &&
+            image_index < region->images.size() &&
+            region->images[image_index]->is_ready_for_runtime_write();
+    };
+    auto primary_region_is_ready = [this,&region_image_is_ready](
+        uint32_t x,
+        uint32_t y,
+        int image_index
+    ) {
+        if(!has_pixel(x,y)){
+            return false;
+        }
+        const uint32_t ex = (uint32_t)(x%rp == 0 && x!=0);
+        const uint32_t ey = (uint32_t)(y%rp == 0 && y!=0);
+        const uint32_t rx = (x/rp) - ex;
+        const uint32_t ry = (y/rp) - ey;
+        return region_image_is_ready(get_region(rx,ry),image_index);
+    };
+    auto every_write_region_is_ready = [this,&region_image_is_ready](
+        uint32_t x,
+        uint32_t y,
+        int image_index
+    ) {
+        if(!has_pixel(x,y)){
+            return false;
+        }
+        bool ex = (x%rp == 0 && x!=0);
+        bool ey = (y%rp == 0 && y!=0);
+        const uint32_t rx = (x/rp) - (uint32_t)ex;
+        const uint32_t ry = (y/rp) - (uint32_t)ey;
+        if(!region_image_is_ready(get_region(rx,ry),image_index)){
+            return false;
+        }
+        ex = (ex && rx != (uint32_t)_region_grid_bound.right);
+        ey = (ey && ry != (uint32_t)_region_grid_bound.bottom);
+        return (!ex || region_image_is_ready(get_region(rx+1,ry),image_index)) &&
+            (!ey || region_image_is_ready(get_region(rx,ry+1),image_index)) &&
+            (!ex || !ey || region_image_is_ready(get_region(rx+1,ry+1),image_index));
+    };
+
+    for(uint32_t y=top; y<=bottom; y++){
+        for(uint32_t x=left; x<=right; x++){
+            if(!every_write_region_is_ready(x,y,normals_index)){
+                return false;
+            }
+        }
+    }
+    const uint32_t source_left = left > 0 ? left-1 : 0;
+    const uint32_t source_top = top > 0 ? top-1 : 0;
+    const uint32_t source_right = MIN(right+1,pixel_width-1);
+    const uint32_t source_bottom = MIN(bottom+1,pixel_height-1);
+    for(uint32_t y=source_top; y<=source_bottom; y++){
+        for(uint32_t x=source_left; x<=source_right; x++){
+            if(!primary_region_is_ready(x,y,heightmap_index)){
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 real_t MGrid::get_height_by_pixel_in_layer(uint32_t x,uint32_t y) const {
     if(!has_pixel(x,y)){
         return 0.0;
@@ -1003,6 +1117,9 @@ real_t MGrid::get_height_by_pixel_in_layer(uint32_t x,uint32_t y) const {
 }
 
 void MGrid::generate_normals_thread(MPixelRegion pxr) {
+#ifdef MTERRAIN_SINGLE_THREADED
+    generate_normals(pxr);
+#else
     Vector<MPixelRegion> px_regions = pxr.devide(4);
     Vector<std::thread*> threads_pull;
     for(int i=0;i<px_regions.size();i++){
@@ -1014,6 +1131,7 @@ void MGrid::generate_normals_thread(MPixelRegion pxr) {
         t->join();
         delete t;
     }
+#endif
 }
 
 void MGrid::generate_normals(MPixelRegion pxr) {
@@ -1175,6 +1293,14 @@ void MGrid::draw_height(Vector3 brush_pos,real_t radius,int brush_id){
     MImage* draw_image = memnew(MImage);
     {
         draw_image->create(draw_pixel_region.get_width(),draw_pixel_region.get_height(),Image::Format::FORMAT_RF);
+#ifdef MTERRAIN_SINGLE_THREADED
+        draw_height_region(
+            draw_image,
+            draw_pixel_region,
+            draw_pixel_region.get_local(draw_pixel_region),
+            brush
+        );
+#else
         constexpr int max_thread = 4;// change this if you change bellow
         Vector<MPixelRegion> draw_pixel_regions = draw_pixel_region.devide(2);
         std::thread threads[max_thread]; 
@@ -1192,6 +1318,7 @@ void MGrid::draw_height(Vector3 brush_pos,real_t radius,int brush_id){
         for(int i=0;i<draw_pixel_regions.size();i++){
             threads[i].join();
         }
+#endif
     }
     uint32_t local_x=0;
     uint32_t local_y=0;
@@ -1261,6 +1388,14 @@ void MGrid::draw_color(Vector3 brush_pos,real_t radius,MColorBrush* brush, int32
     MImage* draw_image = memnew(MImage);
     {
         draw_image->create(draw_pixel_region.get_width(),draw_pixel_region.get_height(),format);
+#ifdef MTERRAIN_SINGLE_THREADED
+        draw_color_region(
+            draw_image,
+            draw_pixel_region,
+            draw_pixel_region.get_local(draw_pixel_region),
+            brush
+        );
+#else
         Vector<MPixelRegion> draw_pixel_regions = draw_pixel_region.devide(4);
         Vector<MPixelRegion> local_pixel_regions;
         for(int i=0;i<draw_pixel_regions.size();i++){
@@ -1276,6 +1411,7 @@ void MGrid::draw_color(Vector3 brush_pos,real_t radius,MColorBrush* brush, int32
             t->join();
             delete t;
         }
+#endif
     }
     uint32_t local_x=0;
     uint32_t local_y=0;
@@ -1318,6 +1454,18 @@ void MGrid::draw_color_region(MImage* img, MPixelRegion draw_pixel_region, MPixe
 
 //&MGrid::generate_normals,this, px_regions[i]
 void MGrid::update_all_dirty_image_texture(bool update_physics){
+#ifdef MTERRAIN_SINGLE_THREADED
+    for(int i=0;i<_terrain_material->all_images.size();i++){
+        MImage* image = _terrain_material->all_images[i];
+        if(!image->is_dirty){
+            continue;
+        }
+        image->update_texture(image->current_scale,true);
+        if(image->name == HEIGHTMAP_NAME && update_physics){
+            image->region->update_physics();
+        }
+    }
+#else
     Vector<std::thread*> threads_pull;
     for(int i=0;i<_terrain_material->all_images.size();i++){
         if(_terrain_material->all_images[i]->is_dirty){
@@ -1335,6 +1483,7 @@ void MGrid::update_all_dirty_image_texture(bool update_physics){
         threads_pull[i]->join();
         delete threads_pull[i];
     }
+#endif
 }
 
 bool MGrid::set_active_layer(String input){
@@ -1487,7 +1636,7 @@ void MGrid::refresh_all_regions_uniforms(){
 }
 
 void MGrid::update_renderer_info(){
-    _is_opengl = RenderingServer::get_singleton()->get_rendering_device() == nullptr;
+    _is_opengl = RenderingServer::get_singleton()->get_current_rendering_method() == "gl_compatibility";
 }
 
 bool MGrid::is_opengl() const{

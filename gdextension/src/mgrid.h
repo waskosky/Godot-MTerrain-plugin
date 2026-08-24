@@ -3,9 +3,11 @@
 
 //#define NO_MERGE
 
-#include <thread>
-#include <future>
 #include <chrono>
+#ifndef MTERRAIN_SINGLE_THREADED
+#include <future>
+#include <thread>
+#endif
 
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/variant/rid.hpp>
@@ -169,8 +171,10 @@ class MGrid {
     uint64_t total_add=0;
     uint64_t total_chunks=0;
 
+#ifndef MTERRAIN_SINGLE_THREADED
     std::future<void> update_regions_future;
     bool is_update_regions_future_valid = false;
+#endif
 
 
     public:
@@ -198,6 +202,7 @@ class MGrid {
     uint64_t instance_id;
     String dataDir;
     String layersDataDir;
+    bool runtime_memory_only = false;
     PackedInt32Array lod_distance;
     int32_t region_size = 128;
     int32_t region_size_meter;
@@ -293,6 +298,8 @@ class MGrid {
     _FORCE_INLINE_ void set_normal(uint32_t x,uint32_t y,const MImageRGB8 rgb);
     real_t get_height_by_pixel(uint32_t x,uint32_t y) const;
     void set_height_by_pixel(uint32_t x,uint32_t y,const real_t value);
+    bool can_set_height_by_pixel(uint32_t x,uint32_t y) const;
+    bool can_update_normals(uint32_t left,uint32_t right,uint32_t top,uint32_t bottom) const;
     real_t get_height_by_pixel_in_layer(uint32_t x,uint32_t y) const;
     _FORCE_INLINE_ bool has_pixel(const uint32_t x,const uint32_t y) const;
     void generate_normals_thread(MPixelRegion pxr);

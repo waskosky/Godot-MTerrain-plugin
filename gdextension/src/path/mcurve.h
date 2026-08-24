@@ -27,7 +27,7 @@
 #include <godot_cpp/templates/vector.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
-#include <godot_cpp/templates/vmap.hpp>
+#include "../util/msorted_vector_map.h"
 
 #include <mutex>
 
@@ -256,7 +256,7 @@ class MCurve : public Resource{
     //PackedInt32Array root_ids;
     static MOctree* octree;
     int32_t last_curve_id = 0;
-    VMap<int32_t,Node*> curve_users;
+    MSortedVectorMap<int32_t,Node*> curve_users;
     VSet<int32_t> processing_users;
     VSet<int32_t> active_points;
     VSet<int64_t> active_conn;

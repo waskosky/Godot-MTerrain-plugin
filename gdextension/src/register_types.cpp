@@ -13,7 +13,7 @@
 
 
 
-#ifdef DEBUG_ENABLED
+#if defined(DEBUG_ENABLED) && defined(MTERRAIN_PROFILE_FULL)
 #include "editor/mmesh_joiner.h"
 #include "editor/masset_mesh.h"
 #include "editor/masset_mesh_updater.h"
@@ -28,14 +28,16 @@
 #include "mbrush_manager.h"
 #include "mcollision.h"
 
+#include "mbrush_layers.h"
+#include "mterrain_material.h"
+
+#ifndef MTERRAIN_CORE_ONLY
 #include "grass/mgrass.h"
 #include "grass/mgrass_data.h"
 #include "grass/mgrass_lod_setting.h"
 #include "navmesh/mnavigation_region_3d.h"
 #include "navmesh/mnavigation_mesh_data.h"
 #include "navmesh/mobstacle.h"
-#include "mbrush_layers.h"
-#include "mterrain_material.h"
 
 #include "moctree.h"
 #include "octmesh/mmesh_lod.h"
@@ -55,6 +57,7 @@
 #include "hlod/mmesh.h"
 #include "hlod/mdecal.h"
 #include "hlod/mdecal_instance.h"
+#endif
 
 using namespace godot;
 
@@ -63,7 +66,7 @@ void initialize_test_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 	
-	#ifdef DEBUG_ENABLED
+	#if defined(DEBUG_ENABLED) && defined(MTERRAIN_PROFILE_FULL)
 	ClassDB::register_class<MMeshJoiner>();
 	ClassDB::register_class<MAssetMeshUpdater>();
 	ClassDB::register_class<MAssetMesh>();
@@ -76,17 +79,19 @@ void initialize_test_module(ModuleInitializationLevel p_level) {
 	ClassDB::register_class<MTerrain>();
 	ClassDB::register_class<MResource>();
 	ClassDB::register_class<MChunkGenerator>();
-	ClassDB::register_class<MTool>();
 	ClassDB::register_class<MBrushManager>();
 	ClassDB::register_class<MCollision>();
+	ClassDB::register_class<MBrushLayers>();
+	ClassDB::register_class<MTerrainMaterial>();
+
+	#ifndef MTERRAIN_CORE_ONLY
+	ClassDB::register_class<MTool>();
 	ClassDB::register_class<MGrass>();
 	ClassDB::register_class<MGrassData>();
 	ClassDB::register_class<MGrassLodSetting>();
 	ClassDB::register_class<MNavigationRegion3D>();
 	ClassDB::register_class<MNavigationMeshData>();
 	ClassDB::register_class<MObstacle>();
-	ClassDB::register_class<MBrushLayers>();
-	ClassDB::register_class<MTerrainMaterial>();
 
 	ClassDB::register_class<MOctree>();
 	ClassDB::register_class<MMeshLod>();
@@ -111,6 +116,7 @@ void initialize_test_module(ModuleInitializationLevel p_level) {
 	ClassDB::register_class<MMesh>();
 	ClassDB::register_class<MDecal>();
 	ClassDB::register_class<MDecalInstance>();
+	#endif
 }
 
 void uninitialize_test_module(ModuleInitializationLevel p_level) {

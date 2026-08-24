@@ -1635,8 +1635,9 @@ int MResource::get_supported_qoi_format_channel_count(Image::Format p_format) {
 			return 3;
 		case Image::FORMAT_RGBA8:
 			return 4;
+		default:
+			return 0;
 	}
-	return 0;
 }
 
 bool MResource::get_supported_png_format(Image::Format format){
@@ -1647,8 +1648,9 @@ bool MResource::get_supported_png_format(Image::Format format){
 			return true;
         case Image::FORMAT_L8:
             return true;
+		default:
+			return false;
 	}
-	return false;
 }
 
 

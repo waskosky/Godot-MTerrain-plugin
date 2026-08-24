@@ -1,4 +1,5 @@
 #include "mterrain.h"
+#include <cmath>
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/world3d.hpp>
 #include <godot_cpp/classes/viewport.hpp>
@@ -10,9 +11,13 @@
 #include <godot_cpp/classes/dir_access.hpp>
 
 #include "mbrush_manager.h"
+#ifndef MTERRAIN_CORE_ONLY
 #include "navmesh/mnavigation_region_3d.h"
+#endif
 #include "mbrush_layers.h"
+#ifndef MTERRAIN_CORE_ONLY
 #include "mtool.h"
+#endif
 
 Vector<MTerrain*> MTerrain::all_terrain_nodes;
 
@@ -42,6 +47,19 @@ void MTerrain::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_height_by_pixel", "x","y"), &MTerrain::get_height_by_pixel);
     ClassDB::bind_method(D_METHOD("get_height_by_pixel_in_layer", "x","y"), &MTerrain::get_height_by_pixel_in_layer);
     ClassDB::bind_method(D_METHOD("set_height_by_pixel", "x","y","value"), &MTerrain::set_height_by_pixel);
+    ClassDB::bind_method(D_METHOD("get_runtime_bridge_api_version"), &MTerrain::get_runtime_bridge_api_version);
+    ClassDB::bind_method(D_METHOD("get_runtime_capabilities"), &MTerrain::get_runtime_capabilities);
+    ClassDB::bind_method(
+        D_METHOD("apply_height_tile", "start_x", "start_y", "width", "height", "heights_m", "update_collision"),
+        &MTerrain::apply_height_tile
+    );
+    ClassDB::bind_method(D_METHOD("set_runtime_memory_only", "enabled"), &MTerrain::set_runtime_memory_only);
+    ClassDB::bind_method(D_METHOD("get_runtime_memory_only"), &MTerrain::get_runtime_memory_only);
+    ADD_PROPERTY(
+        PropertyInfo(Variant::BOOL, "runtime_memory_only"),
+        "set_runtime_memory_only",
+        "get_runtime_memory_only"
+    );
     ClassDB::bind_method(D_METHOD("get_closest_height", "world_position"), &MTerrain::get_closest_height);
     ClassDB::bind_method(D_METHOD("get_height", "world_position"), &MTerrain::get_height);
     ClassDB::bind_method(D_METHOD("get_ray_collision_point", "ray_origin","ray_vector","step","max_step"), &MTerrain::get_ray_collision_point);
@@ -230,6 +248,11 @@ TypedArray<MTerrain> MTerrain::get_all_terrain_nodes(){
 }
 
 MTerrain::MTerrain() {
+#ifdef MTERRAIN_MEMORY_ONLY_DEFAULT
+    runtime_memory_only = true;
+    chunks_update_loop_enabled = false;
+    physics_update_loop_enabled = false;
+#endif
     lod_distance.append(3);
     lod_distance.append(6);
     lod_distance.append(12);
@@ -271,9 +294,11 @@ MTerrain::~MTerrain() {
 
 
 void MTerrain::_finish_terrain() {
+#ifndef MTERRAIN_SINGLE_THREADED
     if(update_thread_chunks.valid()){
         update_thread_chunks.wait();
     }
+#endif
     remove_grid();
 }
 
@@ -281,7 +306,7 @@ void MTerrain::create_grid(){
     ERR_FAIL_COND(grid->is_created());
     ERR_FAIL_COND_EDMSG(terrain_size.x%region_size!=0,"Terrain size X component is not divisible by region size");
     ERR_FAIL_COND_EDMSG(terrain_size.y%region_size!=0,"Terrain size Y component is not divisible by region size");
-    if(Engine::get_singleton()->is_editor_hint()){
+    if(Engine::get_singleton()->is_editor_hint() && !runtime_memory_only){
         if(dataDir.is_empty() || dataDir == String("res://") || !dataDir.is_absolute_path()){
             dataDir = "res://mterrain_data";
         }
@@ -304,20 +329,23 @@ void MTerrain::create_grid(){
     grid->offset = offset;
     grid->dataDir = dataDir;
     grid->layersDataDir = layersDataDir;
+    grid->runtime_memory_only = runtime_memory_only;
     grid->region_size = region_size;
     // Loading save config if there is any
     grid->save_config.clear();
-    String save_config_path = dataDir.path_join(M_SAVE_CONFIG_NAME);
-    if(FileAccess::file_exists(save_config_path)){
-        Ref<ConfigFile> save_config;
-        save_config.instantiate();
-        if(save_config->load(save_config_path) == godot::Error::OK){
-            set_save_config(save_config);
+    if(!runtime_memory_only){
+        String save_config_path = dataDir.path_join(M_SAVE_CONFIG_NAME);
+        if(FileAccess::file_exists(save_config_path)){
+            Ref<ConfigFile> save_config;
+            save_config.instantiate();
+            if(save_config->load(save_config_path) == godot::Error::OK){
+                set_save_config(save_config);
+            } else {
+                WARN_PRINT("Error loading save config "+save_config_path);
+            }
         } else {
-            WARN_PRINT("Error loading save config "+save_config_path);
+            WARN_PRINT("Can not find save config "+save_config_path);
         }
-    } else {
-        WARN_PRINT("Can not find save config "+save_config_path);
     }
     set_heightmap_layers(grid->heightmap_layers); // To make sure we have everything currect including background image
     if(terrain_material.is_valid()){
@@ -346,6 +374,7 @@ void MTerrain::create_grid(){
     last_update_pos = cam_pos;
     // Grass Part
     terrain_ready_signal();
+#ifndef MTERRAIN_CORE_ONLY
     for(int i=0;i<grass_list.size();i++){
         grass_list[i]->init_grass(grid);
         if(grass_list[i]->is_grass_init){
@@ -369,6 +398,7 @@ void MTerrain::create_grid(){
         }
     }
     total_update_count = confirm_grass_list.size() + confirm_nav.size();
+#endif
     if(physics_update_loop_enabled){
         update_physics();
     }
@@ -387,6 +417,7 @@ void MTerrain::remove_grid(bool is_destruction){
         }
         grid->clear();
     }
+#ifndef MTERRAIN_SINGLE_THREADED
     if(update_thread_chunks.valid()){
         update_thread_chunks.wait();
         finish_updating = true;
@@ -399,6 +430,11 @@ void MTerrain::remove_grid(bool is_destruction){
         update_thread_physics.wait();
         finish_updating_physics = true;
     }
+#else
+    finish_updating = true;
+    finish_updating_physics = true;
+#endif
+#ifndef MTERRAIN_CORE_ONLY
     for(int i=0;i<confirm_grass_list.size();i++){
         confirm_grass_list[i]->clear_grass();
     }
@@ -411,6 +447,7 @@ void MTerrain::remove_grid(bool is_destruction){
         }
     }
     confirm_nav.clear();
+#endif
 }
 
 void MTerrain::remove_grid_gd(){
@@ -426,6 +463,20 @@ void MTerrain::update() {
     ERR_FAIL_COND(!finish_updating);
     ERR_FAIL_COND(!grid->is_created());
     get_cam_pos();
+#ifdef MTERRAIN_SINGLE_THREADED
+    finish_updating = false;
+    if(grid->update_regions_bounds(cam_pos,true)){
+        grid->update_regions();
+    }
+    grid->update_chunks(cam_pos);
+    grid->apply_update_chunks();
+    last_update_pos = cam_pos;
+    finish_updating = true;
+    if(chunks_update_loop_enabled){
+        update_chunks_timer->start();
+    }
+    return;
+#else
     finish_updating = false;
     // In case -1 is Terrain grid update turn
     if(update_stage==-1){
@@ -451,9 +502,16 @@ void MTerrain::update() {
         }
     }
     update_chunks_timer->start();
+#endif
 }
 
 void MTerrain::finish_update() {
+#ifdef MTERRAIN_SINGLE_THREADED
+    if(chunks_update_loop_enabled && grid->is_created()){
+        call_deferred("update");
+    }
+    return;
+#else
     //UtilityFunctions::print("Finish update stage ", update_stage);
     if(update_stage == -2){
         bool finish_update_region = false;
@@ -504,12 +562,22 @@ void MTerrain::finish_update() {
     } else {
         update_chunks_timer->start();
     }
+#endif
 }
 
 void MTerrain::update_physics(){
     ERR_FAIL_COND(!finish_updating_physics);
     ERR_FAIL_COND(!grid->is_created());
     get_cam_pos();
+#ifdef MTERRAIN_SINGLE_THREADED
+    finish_updating_physics = false;
+    grid->update_physics(cam_pos);
+    finish_updating_physics = true;
+    if(physics_update_loop_enabled){
+        update_physics_timer->start();
+    }
+    return;
+#else
     finish_updating_physics = false;
     if(update_stage_physics==-1){
         update_thread_physics = std::async(std::launch::async, &MGrid::update_physics, grid, cam_pos);
@@ -517,9 +585,16 @@ void MTerrain::update_physics(){
         update_thread_physics = std::async(std::launch::async, &MGrass::update_physics,confirm_grass_col_list[update_stage_physics], cam_pos);
     }
     update_physics_timer->start();
+#endif
 }
 
 void MTerrain::finish_update_physics(){
+#ifdef MTERRAIN_SINGLE_THREADED
+    if(physics_update_loop_enabled && grid->is_created()){
+        call_deferred("update_physics");
+    }
+    return;
+#else
     std::future_status status = update_thread_physics.wait_for(std::chrono::microseconds(1));
     if(status == std::future_status::ready){
         finish_updating_physics = true;
@@ -533,6 +608,7 @@ void MTerrain::finish_update_physics(){
     } else {
         update_physics_timer->start();
     }
+#endif
 }
 
 bool MTerrain::is_finish_updating(){
@@ -598,16 +674,21 @@ void MTerrain::set_save_config(Ref<ConfigFile> conf){
 }
 
 void MTerrain::save_image(int image_index, bool force_save) {
+    ERR_FAIL_COND_MSG(runtime_memory_only, "Saving is disabled while runtime_memory_only is enabled");
     ERR_FAIL_COND(!grid->is_created());
     ERR_FAIL_COND(image_index>grid->uniforms_id.keys().size());
     grid->save_image(image_index,force_save);
 }
 
 bool MTerrain::has_unsave_image(){
+    if(runtime_memory_only){
+        return false;
+    }
     return grid->has_unsave_image();
 }
 
 void MTerrain::save_all_dirty_images(){
+    ERR_FAIL_COND_MSG(runtime_memory_only, "Saving is disabled while runtime_memory_only is enabled");
     if(grid->is_created()){
         grid->save_all_dirty_images();
     }
@@ -631,17 +712,175 @@ void MTerrain::set_height_by_pixel(const uint32_t x,const uint32_t y,const real_
     grid->set_height_by_pixel(x,y,value);
 }
 
+int MTerrain::get_runtime_bridge_api_version() const {
+    return 1;
+}
+
+Dictionary MTerrain::get_runtime_capabilities() const {
+    Dictionary capabilities;
+    capabilities["api_version"] = get_runtime_bridge_api_version();
+    capabilities["api_stability"] = "experimental";
+#ifdef MTERRAIN_PROFILE_WEB_CORE
+    capabilities["build_profile"] = "web_core";
+#elif defined(MTERRAIN_PROFILE_RUNTIME)
+    capabilities["build_profile"] = "runtime";
+#else
+    capabilities["build_profile"] = "full";
+#endif
+#ifdef MTERRAIN_SINGLE_THREADED
+    capabilities["single_threaded"] = true;
+#else
+    capabilities["single_threaded"] = false;
+#endif
+    capabilities["runtime_memory_only"] = runtime_memory_only;
+    PackedStringArray height_formats;
+    height_formats.push_back("r32f_metres");
+    capabilities["height_formats"] = height_formats;
+    capabilities["max_height_tile_width"] = 67;
+    capabilities["max_height_tile_height"] = 67;
+    capabilities["max_height_tile_samples"] = 4489;
+    capabilities["heightfield_terrain"] = true;
+    capabilities["visual_lod"] = true;
+    capabilities["heightfield_collision"] = true;
+    capabilities["compatibility_materials"] = true;
+    capabilities["height_tile_apply"] = true;
+    capabilities["height_tile_release"] = false;
+    capabilities["bounded_update_scheduler"] = false;
+    capabilities["bounded_collision"] = false;
+#ifdef MTERRAIN_CORE_ONLY
+    capabilities["foliage"] = false;
+    capabilities["navigation"] = false;
+    capabilities["paths"] = false;
+    capabilities["mesh_hlod"] = false;
+#else
+    capabilities["foliage"] = true;
+    capabilities["navigation"] = true;
+    capabilities["paths"] = true;
+    capabilities["mesh_hlod"] = true;
+#endif
+    return capabilities;
+}
+
+Dictionary MTerrain::apply_height_tile(
+    int32_t start_x,
+    int32_t start_y,
+    int32_t width,
+    int32_t height,
+    const PackedFloat32Array& heights_m,
+    bool update_collision
+) {
+    Dictionary result;
+    result["ok"] = false;
+    result["api_version"] = get_runtime_bridge_api_version();
+
+    auto fail = [&result](const String& code, const String& message) {
+        result["code"] = code;
+        result["message"] = message;
+        return result;
+    };
+
+    if(!grid->is_created()){
+        return fail("grid_not_created", "Create the terrain grid before applying a height tile");
+    }
+    if(start_x < 0 || start_y < 0){
+        return fail("negative_origin", "Height tile coordinates must be non-negative");
+    }
+    if(width <= 0 || height <= 0){
+        return fail("invalid_dimensions", "Height tile dimensions must be positive");
+    }
+    if(width > 67 || height > 67){
+        return fail("tile_too_large", "Height tiles are limited to 67 by 67 samples");
+    }
+    const int64_t sample_count = (int64_t)width * (int64_t)height;
+    if(sample_count > 4489 || heights_m.size() != sample_count){
+        return fail("sample_count_mismatch", "Height sample count does not match the bounded tile dimensions");
+    }
+    const int64_t end_x_exclusive = (int64_t)start_x + (int64_t)width;
+    const int64_t end_y_exclusive = (int64_t)start_y + (int64_t)height;
+    if(end_x_exclusive > get_pixel_width() || end_y_exclusive > get_pixel_height()){
+        return fail("tile_out_of_bounds", "Height tile extends beyond the configured terrain grid");
+    }
+
+    PackedFloat32Array staged_heights;
+    staged_heights.resize((int32_t)sample_count);
+    for(int32_t index=0; index < sample_count; index++){
+        const float value = heights_m[index];
+        if(!std::isfinite(value)){
+            return fail("non_finite_height", "Height tiles cannot contain NaN or infinity");
+        }
+        staged_heights.set(index,value);
+    }
+    for(int32_t local_y=0; local_y < height; local_y++){
+        for(int32_t local_x=0; local_x < width; local_x++){
+            if(!grid->can_set_height_by_pixel(start_x+local_x,start_y+local_y)){
+                return fail("tile_not_resident", "Every affected region and shared border must be resident before apply");
+            }
+        }
+    }
+
+    const uint32_t normal_left = (uint32_t)(start_x > 0 ? start_x-1 : 0);
+    const uint32_t normal_top = (uint32_t)(start_y > 0 ? start_y-1 : 0);
+    const uint32_t normal_right = (uint32_t)MIN(end_x_exclusive,get_pixel_width()-1);
+    const uint32_t normal_bottom = (uint32_t)MIN(end_y_exclusive,get_pixel_height()-1);
+    if(!grid->can_update_normals(normal_left,normal_right,normal_top,normal_bottom)){
+        return fail("normal_halo_not_resident", "Every normal destination and height source in the expanded halo must be resident before apply");
+    }
+
+    for(int32_t local_y=0; local_y < height; local_y++){
+        const int32_t row_offset = local_y*width;
+        for(int32_t local_x=0; local_x < width; local_x++){
+            grid->set_height_by_pixel(
+                start_x+local_x,
+                start_y+local_y,
+                staged_heights[row_offset+local_x]
+            );
+        }
+    }
+
+    grid->update_normals(normal_left,normal_right,normal_top,normal_bottom);
+    grid->update_all_dirty_image_texture(update_collision);
+
+    result["ok"] = true;
+    result["code"] = "ok";
+    result["written_samples"] = sample_count;
+    result["pixel_origin"] = Vector2i(start_x,start_y);
+    result["pixel_size"] = Vector2i(width,height);
+    result["normal_origin"] = Vector2i(normal_left,normal_top);
+    result["normal_size"] = Vector2i(
+        normal_right-normal_left+1,
+        normal_bottom-normal_top+1
+    );
+    result["collision_disposition"] = update_collision
+        ? "refreshed_existing_shapes"
+        : "not_requested";
+    return result;
+}
+
+void MTerrain::set_runtime_memory_only(bool input) {
+    ERR_FAIL_COND_MSG(grid->is_created(), "runtime_memory_only cannot change while the terrain grid exists");
+#ifdef MTERRAIN_MEMORY_ONLY_DEFAULT
+    ERR_FAIL_COND_MSG(!input, "This build profile requires runtime_memory_only");
+#endif
+    runtime_memory_only = input;
+}
+
+bool MTerrain::get_runtime_memory_only() const {
+    return runtime_memory_only;
+}
+
 void MTerrain::get_cam_pos() {
     if(custom_camera != nullptr){
         cam_pos = custom_camera->get_global_position();
         return;
     }
     if(Engine::get_singleton()->is_editor_hint()){
+#ifndef MTERRAIN_CORE_ONLY
         Node3D* cam = MTool::find_editor_camera(true);
         if(cam!=nullptr){
             cam_pos = cam->get_global_position();
             return;
         }
+#endif
 
     }
     Viewport* v = get_viewport();
@@ -859,9 +1098,11 @@ void MTerrain::recalculate_terrain_config(const bool& force_calculate) {
         ll = lod_distance[i];
     }
     notify_property_list_changed();
+#ifndef MTERRAIN_CORE_ONLY
     for(int i=0;i<grass_list.size();i++){
         grass_list[i]->recalculate_grass_config(max_lod);
     }
+#endif
 }
 
 int MTerrain::get_min_size() const {
@@ -1111,6 +1352,7 @@ void MTerrain::draw_color(Vector3 brush_pos,real_t radius,String brush_name, Str
     int id = get_image_id(uniform_name);
     ERR_FAIL_COND(id==-1);
     grid->draw_color(brush_pos,radius,brush,id);
+#ifndef MTERRAIN_CORE_ONLY
     for(MGrass* g : confirm_grass_list){
         if(g->is_depend_on_image(id)){
             Vector2i px_pos = g->get_closest_pixel(brush_pos);
@@ -1128,6 +1370,7 @@ void MTerrain::draw_color(Vector3 brush_pos,real_t radius,String brush_name, Str
             g->update_dirty_chunks();
         }
     }
+#endif
 }
 
 Vector3 MTerrain::get_pixel_world_pos(uint32_t x,uint32_t y) const {
@@ -1182,6 +1425,7 @@ void MTerrain::add_heightmap_layer(String lname){
 }
 
 bool MTerrain::rename_heightmap_layer(String old_name,String new_name){
+    ERR_FAIL_COND_V_MSG(runtime_memory_only,false,"Layer file changes are disabled while runtime_memory_only is enabled");
     int layer_index = grid->heightmap_layers.find(old_name);
     ERR_FAIL_COND_V_MSG(layer_index==-1,false,"Can not find layer "+old_name);
     /// Renaming files
@@ -1221,11 +1465,13 @@ bool MTerrain::rename_heightmap_layer(String old_name,String new_name){
 }
 
 void MTerrain::merge_heightmap_layer(){
+    ERR_FAIL_COND_MSG(runtime_memory_only,"Layer file changes are disabled while runtime_memory_only is enabled");
     ERR_FAIL_COND(!grid->is_created());
     grid->merge_heightmap_layer();
 }
 
 void MTerrain::remove_heightmap_layer(){
+    ERR_FAIL_COND_MSG(runtime_memory_only,"Layer file changes are disabled while runtime_memory_only is enabled");
     ERR_FAIL_COND(!grid->is_created());
     grid->remove_heightmap_layer();
 }
@@ -1239,15 +1485,20 @@ void MTerrain::terrain_child_changed(Node* n){
     if(!is_ready){
         return;
     }
+#ifndef MTERRAIN_CORE_ONLY
     if(n->is_class("MGrass")){
         MGrass* g = Object::cast_to<MGrass>(n);
         if(grass_list.find(g)==-1){
             terrain_ready_signal();
         }
     }
+#else
+    (void)n;
+#endif
 }
 
 void MTerrain::terrain_ready_signal(){
+#ifndef MTERRAIN_CORE_ONLY
     if(set_mtime){
         RenderingServer::get_singleton()->global_shader_parameter_add("mtime",RenderingServer::GlobalShaderParameterType::GLOBAL_VAR_TYPE_FLOAT,0.0);
         set_process(true);
@@ -1262,6 +1513,9 @@ void MTerrain::terrain_ready_signal(){
             g->recalculate_grass_config(max_h_scale_index - min_h_scale_index);
         }
     }
+#else
+    set_process(false);
+#endif
     is_ready = true;
     grid->update_renderer_info();
     /// Finish initlaztion start update
@@ -1370,6 +1624,7 @@ void MTerrain::images_add_undo_stage(){
 }
 void MTerrain::images_undo(){
     grid->images_undo();
+#ifndef MTERRAIN_CORE_ONLY
     VSet<int> changed_images;
     for(MImage* img : grid->last_images_undo_affected_list){
         changed_images.insert(img->index);
@@ -1382,6 +1637,7 @@ void MTerrain::images_undo(){
             }
         }
     }
+#endif
 }
 
 void MTerrain::set_terrain_material(Ref<MTerrainMaterial> input){
@@ -1431,9 +1687,11 @@ void MTerrain::update_normals(uint32_t left, uint32_t right, uint32_t top, uint3
 
 void MTerrain::_notification(int32_t what){
     if(what == NOTIFICATION_PROCESS){
+#ifndef MTERRAIN_CORE_ONLY
         if(set_mtime){
             RenderingServer::get_singleton()->global_shader_parameter_set("mtime",MGrass::get_shader_time());
         }
+#endif
         return;
     }
     else if(what == NOTIFICATION_WM_CLOSE_REQUEST || what == NOTIFICATION_WM_GO_BACK_REQUEST){

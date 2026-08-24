@@ -712,8 +712,12 @@ int MHlod::packed_scene_add(const Transform3D& _transform,int32_t id,int32_t arg
 
 void MHlod::packed_scene_set_bind_items(int32_t packed_scene_item_id,int32_t bind0,int32_t bind1){
     ERR_FAIL_INDEX(packed_scene_item_id,item_list.size());
-    if(bind0>=0) ERR_FAIL_INDEX(bind0,item_list.size());
-    if(bind1>=0) ERR_FAIL_INDEX(bind1,item_list.size());
+    if(bind0>=0){
+        ERR_FAIL_INDEX(bind0,item_list.size());
+    }
+    if(bind1>=0){
+        ERR_FAIL_INDEX(bind1,item_list.size());
+    }
     if(bind0>=0) item_list.ptrw()[bind0].is_bound = true;
     if(bind1>=0) item_list.ptrw()[bind1].is_bound = true;
     ERR_FAIL_COND(item_list[packed_scene_item_id].type!=MHlod::Type::PACKED_SCENE);

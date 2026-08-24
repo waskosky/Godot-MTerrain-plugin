@@ -164,7 +164,6 @@ void MAssetMeshUpdater::update_join_mesh(){
         return;
     }
     if(!MAssetTable::mesh_join_is_valid(join_mesh_id)){
-        join_at == -1;
         return;
     }
     joined_mesh_ids = MAssetTable::mesh_join_ids(join_mesh_id);

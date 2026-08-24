@@ -1,9 +1,11 @@
 #ifndef TEST_H
 #define TEST_H
 
-#include <thread>
-#include <future>
 #include <chrono>
+#ifndef MTERRAIN_SINGLE_THREADED
+#include <future>
+#include <thread>
+#endif
 
 #include <godot_cpp/classes/node3d.hpp>
 #include <godot_cpp/classes/material.hpp>
@@ -11,6 +13,7 @@
 #include <godot_cpp/classes/timer.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/templates/list.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
@@ -20,18 +23,24 @@
 
 
 #include "mgrid.h"
+#ifndef MTERRAIN_CORE_ONLY
 #include "grass/mgrass.h"
+#endif
 
 
 using namespace godot;
 
+#ifndef MTERRAIN_CORE_ONLY
 class MNavigationRegion3D;
+#endif
 
 
 class MTerrain : public  Node3D {
     GDCLASS(MTerrain, Node3D);
     private:
+#ifndef MTERRAIN_SINGLE_THREADED
     std::future<void> update_thread_chunks;
+#endif
     bool finish_updating=true;
     bool chunks_update_loop_enabled=true;
     Timer* update_chunks_timer=nullptr;
@@ -44,7 +53,9 @@ class MTerrain : public  Node3D {
     Vector3 last_update_pos;
 
 
+#ifndef MTERRAIN_SINGLE_THREADED
     std::future<void> update_thread_physics;
+#endif
     bool finish_updating_physics=true;
     bool physics_update_loop_enabled=true;
     Timer* update_physics_timer = nullptr;
@@ -71,6 +82,7 @@ class MTerrain : public  Node3D {
     int32_t region_size=16;
     String dataDir;
     String layersDataDir;
+    bool runtime_memory_only = false;
     // Top Level for heightmap layers
     // Heightmap layers index here are not the active layer id, but in grid they are
     // Also we record the active layer by it's name here not its id
@@ -83,17 +95,21 @@ class MTerrain : public  Node3D {
     ///////////////////////////PackedStringArray heightmap_layers; 
     // The default layer name is background
     String active_layer_name="background";
+#ifndef MTERRAIN_CORE_ONLY
     Vector<MGrass*> grass_list;
     Vector<MGrass*> confirm_grass_list;
     Vector<MNavigationRegion3D*> confirm_nav;
     int total_update_count=0;
+#endif
     // Show if terrain ready called
     bool is_ready=false;
     //Array of brush layers resource
     Array brush_layers;
 
+#ifndef MTERRAIN_SINGLE_THREADED
     std::future<void> update_regions_future;
     bool is_update_regions_future_valid = false;
+#endif
     bool set_mtime=false;
     static Vector<MTerrain*> all_terrain_nodes;
 
@@ -104,8 +120,10 @@ class MTerrain : public  Node3D {
 
     public:
     static TypedArray<MTerrain> get_all_terrain_nodes();
+#ifndef MTERRAIN_CORE_ONLY
     // Confirm grass list with collision
     Vector<MGrass*> confirm_grass_col_list;
+#endif
     MGrid* grid=nullptr;
     Node3D* editor_camera = nullptr;
     MTerrain();
@@ -134,6 +152,19 @@ class MTerrain : public  Node3D {
     real_t get_height_by_pixel(const uint32_t x,const uint32_t y) const;
     real_t get_height_by_pixel_in_layer(const uint32_t x,const uint32_t y) const;
     void set_height_by_pixel(const uint32_t x,const uint32_t y,const real_t value);
+
+    int get_runtime_bridge_api_version() const;
+    Dictionary get_runtime_capabilities() const;
+    Dictionary apply_height_tile(
+        int32_t start_x,
+        int32_t start_y,
+        int32_t width,
+        int32_t height,
+        const PackedFloat32Array& heights_m,
+        bool update_collision
+    );
+    void set_runtime_memory_only(bool input);
+    bool get_runtime_memory_only() const;
 
     void get_cam_pos();
 

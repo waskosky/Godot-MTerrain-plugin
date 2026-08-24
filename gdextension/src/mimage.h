@@ -4,7 +4,6 @@
 #include "mconfig.h"
 
 #include <mutex>
-#include <thread>
 #include <chrono>
 #include <atomic>
 
@@ -83,7 +82,7 @@ struct MImage {
     MImage(const String& _name,const String& _uniform_name,MGridPos _grid_pos,MRegion* r);
     ~MImage();
     void load(Ref<MResource> mres);
-    void unload(Ref<MResource> mres);
+    void unload(Ref<MResource> mres, bool save_before_unload = true);
     void set_active_layer(int l);
     void add_layer(String lname);
     void rename_layer(int layer_index,String new_name);
@@ -113,6 +112,7 @@ struct MImage {
     void remove_undo_data_in_layer(int layer_index);
     bool go_to_undo(int ur_id);
     bool has_undo(int ur_id);
+    _FORCE_INLINE_ bool is_ready_for_runtime_write() const;
 
     // This functions exist in godot source code
 	_FORCE_INLINE_ Color _get_color_at_ofs(const uint8_t *ptr, uint32_t ofs) const;
@@ -128,6 +128,10 @@ struct MImage {
     void load_layer(String lname);
     _FORCE_INLINE_ String get_layer_data_dir();
 };
+
+bool MImage::is_ready_for_runtime_write() const {
+	return !is_null_image && is_init.load(std::memory_order_acquire);
+}
 
 
 

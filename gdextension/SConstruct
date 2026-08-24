@@ -3,49 +3,128 @@ from pathlib import Path
 import shutil
 
 
-env = SConscript('godot-cpp/SConstruct')
+# MTerrain options are consumed before godot-cpp parses ARGUMENTS so the nested
+# build does not report them as unknown variables.
+mterrain_profile = ARGUMENTS.pop("mterrain_profile", "full")
+mterrain_output_dir = ARGUMENTS.pop("mterrain_output_dir", "")
 
+valid_profiles = ("full", "runtime", "web_core")
+if mterrain_profile not in valid_profiles:
+    raise ValueError(
+        "mterrain_profile must be one of: " + ", ".join(valid_profiles)
+    )
 
-cwd = Path(Dir('.').abspath)
-parent_dir_name = cwd.parent.name
-grandparent_dir_name = cwd.parent.parent.name
+# Generated wrappers contain target-width-sensitive opaque sizes. Give each
+# requested tuple its own godot-cpp variant tree so wasm32 and 64-bit builds can
+# neither overwrite nor race one another's generated headers and libraries.
+requested_binding_tuple = "-".join(
+    str(ARGUMENTS.get(key, default)).replace("/", "_")
+    for key, default in (
+        ("platform", "default"),
+        ("target", "template_debug"),
+        ("arch", "default"),
+        ("precision", "single"),
+        ("threads", "default"),
+    )
+)
+binding_variant_dir = Path(Dir(".").abspath).parent.joinpath(
+    "build", "godot-cpp", requested_binding_tuple, mterrain_profile
+)
+env = SConscript(
+    "godot-cpp/SConstruct",
+    variant_dir=str(binding_variant_dir),
+    # godot-cpp mixes generated files with a few hand-authored headers/sources;
+    # duplicating those inputs gives SCons a complete, independently scannable
+    # variant tree instead of unresolved source nodes on clean full builds.
+    duplicate=1,
+)
 
-if parent_dir_name!="m_terrain":
-    raise ValueError("\033[91mERROR: Please re-name paren root dir from "+parent_dir_name+" to m_terrain\033[0m")
+if env["platform"] == "web" and mterrain_profile != "web_core":
+    raise ValueError(
+        "Web builds currently support only mterrain_profile=web_core"
+    )
+if mterrain_profile == "web_core" and env["threads"]:
+    raise ValueError("mterrain_profile=web_core requires threads=no")
+if mterrain_profile == "web_core" and env["precision"] != "single":
+    raise ValueError("mterrain_profile=web_core currently requires precision=single")
 
-if grandparent_dir_name!="addons":
-    raise ValueError("\033[91mERROR: Please re-name grandparent root dir from "+grandparent_dir_name+" to addons\033[0m")
-
-libdir = cwd.joinpath("../../../mterrain")
-os.makedirs(libdir,0o755,True)
+source_dir = Path(Dir(".").abspath)
+if mterrain_output_dir:
+    output_dir = Path(mterrain_output_dir).expanduser()
+    if not output_dir.is_absolute():
+        output_dir = source_dir.joinpath(output_dir)
+else:
+    plugin_root = source_dir.parent
+    if plugin_root.name == "m_terrain" and plugin_root.parent.name == "addons":
+        # Preserve the established embedded-addon layout: the manifest expects
+        # res://mterrain while sources live under res://addons/m_terrain.
+        output_dir = plugin_root.parent.parent.joinpath("mterrain")
+    else:
+        output_dir = plugin_root.joinpath("build", "mterrain")
+output_dir = output_dir.resolve()
+os.makedirs(output_dir, mode=0o755, exist_ok=True)
 
 env.Append(CPPPATH="src/")
 if env["precision"] == "single":
-    shutil.copy("MTerrain.txt", libdir.joinpath("MTerrain.gdextension"))
+    shutil.copy("MTerrain.txt", output_dir.joinpath("MTerrain.gdextension"))
 elif env["precision"] == "double":
-    shutil.copy("MTerrain_double.txt", libdir.joinpath("MTerrain.gdextension"))
-    print("Single double")
+    shutil.copy("MTerrain_double.txt", output_dir.joinpath("MTerrain.gdextension"))
 else:
-    raise ValueError("Can't detect presicion!")
+    raise ValueError("Unsupported precision: " + str(env["precision"]))
 
+src = list(Glob("src/*.cpp"))
+src.extend(Glob("src/util/*.cpp"))
+src.extend(Glob("src/height_brushes/*.cpp"))
+src.extend(Glob("src/color_brushes/*.cpp"))
 
-src = Glob("src/*.cpp")
-src.append(Glob("src/util/*.cpp"))
-src.append(Glob("src/hlod/*.cpp"))
-src.append(Glob("src/height_brushes/*.cpp"))
-src.append(Glob("src/color_brushes/*.cpp"))
-src.append(Glob("src/grass/*.cpp"))
-src.append(Glob("src/navmesh/*.cpp"))
-src.append(Glob("src/octmesh/*.cpp"))
-src.append(Glob("src/path/*.cpp"))
+if mterrain_profile == "web_core":
+    src = [
+        node for node in src
+        if node.name not in ("moctree.cpp", "mtool.cpp")
+    ]
+    env.Append(
+        CPPDEFINES=[
+            "MTERRAIN_CORE_ONLY",
+            "MTERRAIN_MEMORY_ONLY_DEFAULT",
+            "MTERRAIN_PROFILE_WEB_CORE",
+            "MTERRAIN_SINGLE_THREADED",
+        ]
+    )
+else:
+    src.extend(Glob("src/hlod/*.cpp"))
+    src.extend(Glob("src/grass/*.cpp"))
+    src.extend(Glob("src/navmesh/*.cpp"))
+    src.extend(Glob("src/octmesh/*.cpp"))
+    src.extend(Glob("src/path/*.cpp"))
+    if mterrain_profile == "runtime":
+        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_RUNTIME"])
+    else:
+        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_FULL"])
+        if env["target"] == "template_debug":
+            print("Compiling MTerrain's full debug/editor source profile")
+            src.extend(Glob("src/editor/*.cpp"))
 
-if env["target"] == "template_debug":
-    print("compiling for Debug and Editor")
-    src.append(Glob("src/editor/*.cpp"))
-
-libname :str= 'MTerrain{}{}'.format( env['suffix'], env['SHLIBSUFFIX'] )
-libpath :str= str(libdir.joinpath(libname).resolve())
+libname = "MTerrain{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
+libpath = str(output_dir.joinpath(libname))
 if env["platform"] == "windows":
-    env.Replace(LIBPREFIX='')
-sharedlib = env.SharedLibrary(libpath, src)
+    env.Replace(LIBPREFIX="")
+variant = "{}-{}-{}-{}-{}-{}".format(
+    env["platform"],
+    env["target"],
+    env["arch"],
+    env["precision"],
+    "threads" if env["threads"] else "nothreads",
+    mterrain_profile,
+)
+object_root = source_dir.parent.joinpath("build", "scons", variant)
+objects = []
+for source in src:
+    relative_stem = os.path.splitext(str(source))[0]
+    object_target = object_root.joinpath(relative_stem)
+    objects.extend(env.SharedObject(target=str(object_target), source=source))
+
+# The target-specific static binding library completes before any MTerrain
+# object begins reading its generated headers.
+env.Requires(objects, env["LIBS"])
+sharedlib = env.SharedLibrary(libpath, objects)
 Default(sharedlib)

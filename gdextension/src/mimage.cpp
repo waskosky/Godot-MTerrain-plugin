@@ -95,13 +95,15 @@ void MImage::load(Ref<MResource> mres){
 	is_dirty = true; //So Image will be updated in update call in region
 }
 
-void MImage::unload(Ref<MResource> mres){
+void MImage::unload(Ref<MResource> mres, bool save_before_unload){
 	std::lock_guard<std::recursive_mutex> lock(load_mutex);
 	if(!is_init){
 		return;
 	}
 	is_init.store(false,std::memory_order_seq_cst);
-	save(mres,false);
+	if(save_before_unload){
+		save(mres,false);
+	}
 	for(HashMap<int,MImageUndoData>::Iterator it=undo_data.begin();it!=undo_data.end();++it){
 		it->value.free();
 	}
@@ -671,8 +673,9 @@ int MImage::get_format_pixel_size(Image::Format p_format) {
 			return 16;
 		case Image::FORMAT_RGBE9995:
 			return 4;
+		default:
+			return 0;
 	}
-	return 0;
 }
 
 

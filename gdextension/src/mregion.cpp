@@ -100,11 +100,11 @@ void MRegion::unload(){
 	is_data_loaded.store(false, std::memory_order_release);
 	Ref<MResource> mres;
 	String res_path = get_res_path();
-	if(ResourceLoader::get_singleton()->exists(res_path)){
+	if(!grid->runtime_memory_only && ResourceLoader::get_singleton()->exists(res_path)){
 		mres = ResourceLoader::get_singleton()->load(get_res_path());
 	}
 	for(int i=0; i < images.size(); i++){
-		images[i]->unload(mres);
+		images[i]->unload(mres,!grid->runtime_memory_only);
 	}
 }
 

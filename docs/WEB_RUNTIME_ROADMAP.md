@@ -1,6 +1,7 @@
 # MTerrain Web Runtime Roadmap
 
-- Status: active design and delivery plan
+- Status: active delivery; repository contract complete and first initialized
+  height-projection slice locally verified on 2026-08-24
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -29,9 +30,9 @@ The Web runtime must remain optional. A project that never exports to Web should
 retain the normal native MTerrain workflow and should not pay for Web-specific
 fallbacks in its hot path.
 
-## 2. Current baseline and gaps
+## 2. Implemented baseline and remaining gaps
 
-The current source has several useful foundations:
+The source retains these useful foundations:
 
 - a Compatibility-specific `start_opengl.gdshader` using vertex texture fetches;
 - RenderingServer-based terrain, mesh, and MultiMesh realization;
@@ -40,27 +41,73 @@ The current source has several useful foundations:
 - camera-relative terrain and object LOD;
 - an MIT-licensed C++ GDExtension with a pinned `godot-cpp` submodule.
 
-It is not yet a Web runtime:
+The first implementation slice is now present:
 
-1. `MTerrain.gdextension` has no Web libraries.
-2. `SConstruct` has no explicit Web profile and links all runtime subsystems.
-3. Core terrain updates use unconditional `std::async` and future waits.
-4. Octree, path, HLOD, grass, and navigation code also assumes worker threads or
-   threaded resource loading.
-5. Runtime region code is coupled to loading and saving project resources.
-6. No native batch height-tile API exists; repeated per-pixel calls are the only
-   generic mutation surface.
-7. The editor/runtime source boundary is based partly on build target names
-   rather than a deliberate feature profile.
-8. There is no wasm build receipt, browser smoke fixture, Web CI, or published
-   browser compatibility statement.
-9. Some registered classes expose renderer features, notably decals and dynamic
-   GI controls, that the Compatibility renderer cannot realize.
-10. Shared region retention and globally camera-ranged collision are not enough
-    to prove bounded browser residency and deterministic eviction.
+- `full`, `runtime`, and fail-closed `web_core` source profiles exist. Web accepts
+  only single-precision, no-thread `web_core`; its C++ closure excludes editor,
+  octree-object, grass, navigation, path, mesh-HLOD, and decal sources.
+- Godot 4.7 stable, its exact GDExtension API, `godot-cpp`, Emscripten, emsdk,
+  Binaryen, SCons, and Brotli are pinned in `tools/web_toolchain.json`.
+- Debug and release wasm32 no-thread manifest entries, a trimmed binding profile,
+  deterministic build script, artifact receipt writer, and target-separated
+  MTerrain object and `godot-cpp` variant directories are checked in. Plugin
+  objects wait for their target-width-specific binding library, preventing
+  native/Web header races without forcing every invocation to regenerate it.
+- A pinned, least-privilege source-contract workflow checks standalone
+  governance, profile/manifest invariants, and Python/shell parsing on pull
+  requests and default-branch pushes. It does not yet compile Web artifacts.
+- Core thread/future launch sites have explicit synchronous `web_core` branches.
+  The automatic terrain and physics loops default off in that profile because
+  their work is not yet a bounded state machine.
+- Runtime bridge API v1 reports capabilities and accepts one validated,
+  all-or-nothing, finite 67-by-67 R32F-metre height tile. It verifies every
+  affected region, duplicate shared-border destination, normal destination, and
+  height-source halo before mutation, expands normal regeneration by one sample,
+  and coalesces the dirty upload.
+- `runtime_memory_only` is mandatory in `web_core`; it cannot be disabled, and
+  explicit save, editor directory creation, destructive layer-file operations,
+  and eviction-time legacy saves fail closed. Packed read-only resources may
+  still be loaded.
+- The complete native debug/editor source profile compiles and links against the
+  same Godot 4.7 API after replacing the removed `godot-cpp` VMap dependency with
+  a small repository-owned sorted-vector map.
+- A native fixture and real dynamic-link Web export create a four-region,
+  memory-only terrain and apply one finite 67-by-67 height tile across both
+  shared region borders. They verify the duplicated border height, a 69-by-69
+  normal destination, rejection of a non-finite replacement without partial
+  mutation, and a visible raised heightfield.
+- Playwright Chromium, Firefox, and WebKit load the extension with WebGL2,
+  wasm32, no threads, the expected capability tuple, a nonblank directly
+  captured framebuffer, and no console, page, or request errors. Page and direct
+  framebuffer captures are retained separately because some headless WebKit
+  builds return a black compositor screenshot despite healthy WebGL pixels.
+  These are local automated browser checks, not physical-device support claims.
+- Binaryen inspection records the artifact feature set and rejects thread or
+  shared-memory requirements. The locally built debug/release side modules are
+  817,244/790,279 raw bytes and 119,402/118,026 bytes at Brotli quality 11.
+  Final release evidence must be regenerated from the clean merged commit.
 
-These are engineering gaps, not evidence that heightfield terrain cannot work on
-WebGL2.
+The remaining gaps are deliberately material:
+
+1. The initialized canary proves one cross-region tile, but not two independently
+   applied adjacent tiles, a visible equal-detail/LOD seam, collision traversal,
+   revision replacement, eviction, or reload.
+2. Terrain streaming, normals, uploads, and collision still need resumable,
+   cancellable, revision-safe work with measured per-frame budgets. Synchronous
+   fallback code is correctness scaffolding, not the final scheduler.
+3. Per-region upload-count instrumentation and separate timing for validation,
+   normal generation, texture apply, and collision remain open.
+4. Collision admission/readiness, deterministic eviction, memory ceilings, and
+   Compatibility material fallback still need implementation evidence.
+5. Web compile/export/browser CI, clean-clone reproduction, immutable artifacts,
+   and a published support matrix are not yet present; current CI is source-only.
+6. Headed Chrome, Firefox, and Safari plus physical Android- and iOS-class device
+   evidence remain mandatory before a browser release claim.
+7. Foliage, mesh HLOD, navigation, and paths remain native-only until each earns
+   an independently bounded `web_extended` implementation and gate.
+
+These are engineering gaps, not evidence that bounded heightfield terrain cannot
+work on WebGL2.
 
 ## 3. Accepted long-term decisions
 
@@ -90,7 +137,7 @@ instead of linking every subsystem:
 |---|---|---|
 | `full` | Native editor/runtime compatibility | Existing terrain, grass, navigation, octree, paths, HLOD, editor helpers where applicable |
 | `runtime` | Native exported runtime | Runtime capabilities without editor-only C++ |
-| `web_core` | First release-bearing browser runtime | Terrain height, visual LOD, tile batch API, bounded collision, minimal materials |
+| `web_core` | First release-bearing browser runtime | Terrain height, visual LOD, tile batch API, existing collision/material primitives; bounded collision and rendered-material proof remain gated |
 | `web_extended` | Later opt-in browser runtime | Individually proven grass, mesh HLOD, navigation, and path projections |
 
 The exact profile names may change once implemented, but the separation and
@@ -193,6 +240,7 @@ range, precision, and decode math become a versioned contract with exact fixture
 Every Web artifact receipt records:
 
 - MTerrain commit;
+- source tree identity, so a content-identical merge commit can be recognized;
 - `godot-cpp` commit;
 - Godot version and source/template commit;
 - GDExtension API version;
@@ -201,24 +249,26 @@ Every Web artifact receipt records:
 - `target`, `precision`, optimization, debug-symbol, and thread values;
 - runtime profile and enabled capabilities;
 - output byte size and SHA-256.
+- Binaryen version and the exact required WebAssembly feature set.
 
 An artifact is reusable only when the complete tuple and output digest match.
 
 ### 4.2 SCons behavior
 
-`gdextension/SConstruct` will gain validated options for runtime profile and
-feature selection. Requirements:
+`gdextension/SConstruct` now owns the validated `full`, `runtime`, and
+`web_core` source profiles. The following requirements remain normative:
 
-- `platform=web` defaults to `arch=wasm32` through `godot-cpp`.
+- Web build scripts select `platform=web` and `arch=wasm32` explicitly.
 - Web release and debug builds are produced explicitly with `threads=no`.
-- A threaded artifact, if built, has a different suffix and receipt.
+- A threaded artifact, if added later, has a different suffix and receipt.
 - Editor-only source is selected by an editor capability, not merely because the
   target contains debug symbols.
-- Invalid combinations stop before compilation. For example, Web decals or a
-  single-thread build containing forced async terrain updates must fail.
+- Invalid combinations stop before plugin compilation. Current Web builds reject
+  every profile except `web_core`; `web_core` also rejects `threads=yes` and
+  double precision.
 - Output filenames retain the complete `godot-cpp` suffix.
-- Build scripts run from a deterministic addon-shaped staging directory without
-  requiring users to rename their repository checkout manually.
+- Build and smoke scripts use deterministic staging without requiring users to
+  rename their repository checkout manually.
 
 ### 4.3 Manifest entries
 
@@ -477,13 +527,13 @@ configuration, and never weakened solely to make a regression pass.
 
 ## 8. Delivery milestones and gates
 
-### Milestone 0 — Repository contract
+### Milestone 0 — Repository contract — complete 2026-08-24
 
 - Repository guidance and this roadmap are reviewed and on the default branch.
 - Toolchain and source-profile decisions are explicit.
 - No runtime claim is made.
 
-### Milestone 1 — Reproducible Web compile/load
+### Milestone 1 — Reproducible Web compile/load — locally verified 2026-08-24
 
 - Pinned Godot 4.7/`godot-cpp`/Emscripten tuple.
 - `web_core` debug and release wasm32 no-thread libraries.
@@ -492,13 +542,28 @@ configuration, and never weakened solely to make a regression pass.
 - Browser loads the extension and returns a capability dictionary.
 - Artifact receipt and binary-size report exist.
 
-### Milestone 2 — Batch height projection
+The local gate is green for debug/release Web compilation, full native debug
+compilation, native core loading, export, and Chromium/Firefox/WebKit load and
+framebuffer probes. Before treating this as a distributable milestone, reproduce
+it from the clean merged commit, add native release and clean-clone CI evidence,
+and publish immutable artifacts/receipts.
+
+### Milestone 2 — Batch height projection — first projection locally verified
 
 - Versioned batch API with strict bounds and finite-value validation.
 - Memory-fed/no-save runtime mode.
 - Adjacent 67-by-67 tiles render with shared borders and continuous normals.
 - Invalid input cannot partially mutate terrain.
 - One texture upload per affected region per committed update.
+
+API v1, memory-only policy, bounded validation, shared-border and normal-source
+preflight, normal halo calculation, and coalesced dirty upload are implemented.
+Native and Chromium/Firefox/WebKit fixtures initialize four RAM-backed regions,
+apply one 67-by-67 tile across both shared borders, inspect a duplicated border
+sample, render the raised heightfield, and prove that a non-finite replacement
+does not partially mutate it. An independently applied adjacent-tile seam and
+normal proof, collision traversal, and upload-count instrumentation remain open;
+therefore the full milestone is not complete.
 
 ### Milestone 3 — Bounded single-thread residency
 

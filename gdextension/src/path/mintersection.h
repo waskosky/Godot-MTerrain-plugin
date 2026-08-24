@@ -4,7 +4,6 @@
 
 #include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/templates/vector.hpp>
-#include <godot_cpp/templates/vmap.hpp>
 #include <godot_cpp/templates/vset.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/classes/material.hpp>

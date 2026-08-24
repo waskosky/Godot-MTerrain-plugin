@@ -17,7 +17,7 @@ class MDecalInstance : public VisualInstance3D {
     void set_decal(Ref<MDecal> input);
     Ref<MDecal> get_decal() const;
 
-    AABB _get_aabb() const;
+    AABB _get_aabb() const override;
 
     void _notification(int32_t what);
 };

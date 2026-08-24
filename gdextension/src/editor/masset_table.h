@@ -12,6 +12,8 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/classes/texture2d.hpp>
 
+#include "../util/msorted_vector_map.h"
+
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 
 #include "../hlod/mhlod.h"
@@ -109,8 +111,8 @@ class MAssetTable : public Resource {
 
     private:
     Vector<Collection> collections;
-    VMap<int32_t,SubCollectionData> sub_collections;
-    VMap<int32_t,CollisionData> collisions_data;
+    MSortedVectorMap<int32_t,SubCollectionData> sub_collections;
+    MSortedVectorMap<int32_t,CollisionData> collisions_data;
     PackedStringArray physics_names;
     PackedStringArray collections_names;
     Vector<Tag> collections_tags;

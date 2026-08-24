@@ -9,7 +9,7 @@
 #include <godot_cpp/variant/transform3d.hpp>
 #include <godot_cpp/classes/shape3d.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
-#include <godot_cpp/templates/vmap.hpp>
+#include "../util/msorted_vector_map.h"
 
 #include "mmesh.h"
 #include "mdecal.h"
@@ -416,7 +416,7 @@ struct MHLodItemCollisionComplex {
 struct MHLodItemLight { // No more memebr or increase item size
     //Bellow light rid keeped here to reducing memory size
     // if change this and put it inside struct set_data and get_data should be corrected also
-    static inline VMap<MHLodItemLight*,RID> lights_list;
+    static inline MSortedVectorMap<MHLodItemLight*,RID> lights_list;
     enum Type {SPOT=0,OMNI=1};
     unsigned int distance_fade_enabled:1; // 1 true 0 false
     unsigned int shadow_enabled:1;
@@ -526,7 +526,7 @@ struct MHLodItemLight { // No more memebr or increase item size
 
 
 struct MHLodItemPackedScene {
-    static inline VMap<MHLodItemPackedScene*,Ref<PackedScene>> packed_scenes;
+    static inline MSortedVectorMap<MHLodItemPackedScene*,Ref<PackedScene>> packed_scenes;
     int32_t id = -1;
     int32_t bind_items[M_PACKED_SCENE_BIND_COUNT] = {-1};
     int32_t args[M_PACKED_SCENE_ARG_COUNT];

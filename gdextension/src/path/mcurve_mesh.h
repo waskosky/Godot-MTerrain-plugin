@@ -6,7 +6,6 @@
 #include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/material.hpp>
-#include <godot_cpp/templates/vmap.hpp>
 #include <godot_cpp/templates/hash_set.hpp>
 #include <godot_cpp/classes/material.hpp>
 #include "mpath.h"

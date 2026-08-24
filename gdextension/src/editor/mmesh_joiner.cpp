@@ -141,10 +141,10 @@ void MMeshJoiner::_join_meshes(const Vector<int>& data_ids,Array& mesh_arr,uint6
         m->append_indices_to(indices,vertices.size());// as we use vertices.size() this should come first really important
         m->append_vertices_to(vertices);
         m->append_normals_to(normals);
-        if(flags&Flags::TANGENT!=0) m->append_tangents_to(tangents);
-        if(flags&Flags::UV!=0) m->append_uv_to(uv);
-        if(flags&Flags::UV2!=0) m->append_uv2_to(uv2);
-        if(flags&Flags::COLOR!=0) m->append_colors_to(colors);
+        if((flags&Flags::TANGENT)!=0) m->append_tangents_to(tangents);
+        if((flags&Flags::UV)!=0) m->append_uv_to(uv);
+        if((flags&Flags::UV2)!=0) m->append_uv2_to(uv2);
+        if((flags&Flags::COLOR)!=0) m->append_colors_to(colors);
     }
     ERR_FAIL_COND(vertices.size()==0);
     mesh_arr.clear(); // just in case
@@ -152,10 +152,10 @@ void MMeshJoiner::_join_meshes(const Vector<int>& data_ids,Array& mesh_arr,uint6
     mesh_arr[Mesh::ARRAY_VERTEX]=vertices;
     mesh_arr[Mesh::ARRAY_NORMAL]=normals;
     mesh_arr[Mesh::ARRAY_INDEX]=indices;
-    if(flags&Flags::TANGENT!=0) mesh_arr[Mesh::ARRAY_TANGENT]=tangents;
-    if(flags&Flags::UV!=0) mesh_arr[Mesh::ARRAY_TEX_UV]=uv;
-    if(flags&Flags::UV2!=0) mesh_arr[Mesh::ARRAY_TEX_UV2]=uv2;
-    if(flags&Flags::COLOR!=0) mesh_arr[Mesh::ARRAY_COLOR]=colors;
+    if((flags&Flags::TANGENT)!=0) mesh_arr[Mesh::ARRAY_TANGENT]=tangents;
+    if((flags&Flags::UV)!=0) mesh_arr[Mesh::ARRAY_TEX_UV]=uv;
+    if((flags&Flags::UV2)!=0) mesh_arr[Mesh::ARRAY_TEX_UV2]=uv2;
+    if((flags&Flags::COLOR)!=0) mesh_arr[Mesh::ARRAY_COLOR]=colors;
     int fvcount = vertices.size();
     /*
     ERR_FAIL_COND(fvcount!=uv.size() && uv.size()!=0);

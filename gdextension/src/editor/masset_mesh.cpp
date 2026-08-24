@@ -319,7 +319,7 @@ void MAssetMesh::generate_instance_data(int collection_id,const Transform3D& tra
 
 void MAssetMesh::update_instance_date(){
     if(collection_identifier.is_null()){ // NULL STATE
-        collection_id == -1;
+        collection_id = -1;
         return;
     }
     Ref<MAssetTable> at = MAssetTable::get_singleton();

@@ -1,0 +1,28 @@
+name: Web source contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Run source contract tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Parse Python helpers
+        run: python3 -m py_compile scripts/*.py tests/*.py
+
+      - name: Parse shell helpers
+        run: bash -n scripts/*.sh
