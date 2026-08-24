@@ -1,6 +1,12 @@
 # Godot M Terrain
 MTerrain is an optimized terrain system/editor for Godot Engine.
 
+Web runtime work is governed by the standalone
+[Web Runtime Roadmap](docs/WEB_RUNTIME_ROADMAP.md). The primary browser target is
+Godot 4.7, wasm32, the Compatibility renderer, WebGL2, and a single-threaded
+GDExtension build; current releases should not be assumed to provide that support
+until the roadmap's compile, browser, and representative-device gates pass.
+
 ![Screenshot_20230707_104154](https://github.com/mohsenph69/Godot-MTerrain-plugin/assets/52196206/7e3eb7da-af57-4ae5-8f55-f9fc1c8b26f8)
 
 
