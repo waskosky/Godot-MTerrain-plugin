@@ -47,6 +47,7 @@ class MRegion{
     RID physic_body;
     RID heightmap_shape;
     bool has_physic=false;
+    uint64_t collision_generation=0;
     double current_image_size = 5;
     int32_t current_scale=1;
     bool is_min_max_height_calculated = false;
@@ -92,6 +93,10 @@ class MRegion{
     void create_physics();
     void update_physics();
     void remove_physics();
+    bool has_physics() const;
+    uint64_t get_collision_generation() const;
+    uint64_t get_estimated_runtime_bytes() const;
+    void recalculate_min_max_height();
     _FORCE_INLINE_ Color get_pixel(const uint32_t x, const uint32_t y, const int32_t& index) const;
     _FORCE_INLINE_ void set_pixel(const uint32_t x, const uint32_t y,const Color& color,const int32_t& index);
     _FORCE_INLINE_ Color get_normal_by_pixel(const uint32_t x, const uint32_t y) const;
@@ -157,6 +162,7 @@ void MRegion::set_height_by_pixel(const uint32_t x, const uint32_t y,const real_
 		return;
 	}
 	heightmap->set_pixel_RF(x,y,value);
+	is_min_max_height_calculated = false;
 }
 
 void MRegion::set_normal(uint32_t x, uint32_t y, MImageRGB8 rgb)

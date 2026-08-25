@@ -12,7 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class WebSourceContractTests(unittest.TestCase):
     def test_web_governance_docs_remain_standalone(self) -> None:
-        for relative in ("AGENTS.md", "docs/WEB_RUNTIME_ROADMAP.md"):
+        for relative in (
+            "AGENTS.md",
+            "docs/WEB_RUNTIME_ROADMAP.md",
+            "docs/WEB_RUNTIME_API.md",
+        ):
             source = (ROOT / relative).read_text(encoding="utf-8")
             self.assertIsNone(
                 re.search(r"\b(?:rai|openverse|godot-light)\b", source, re.IGNORECASE),
@@ -20,26 +24,18 @@ class WebSourceContractTests(unittest.TestCase):
             )
 
     def test_toolchain_is_single_threaded_wasm32_godot_47(self) -> None:
-        toolchain = json.loads(
-            (ROOT / "tools" / "web_toolchain.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(toolchain["schema"], "mterrain-web-toolchain-v1")
-        self.assertEqual(toolchain["godot"]["version"], "4.7.stable.official.5b4e0cb0f")
-        self.assertEqual(toolchain["platform"], "web")
-        self.assertEqual(toolchain["architecture"], "wasm32")
-        self.assertEqual(toolchain["precision"], "single")
-        self.assertFalse(toolchain["threads"])
-        self.assertEqual(toolchain["profile"], "web_core")
-        self.assertEqual(toolchain["brotli_version"], "1.2.0")
-        self.assertEqual(toolchain["brotli_quality"], 11)
-        self.assertEqual(
-            toolchain["binaryen_version"],
-            "wasm-opt version 124 (version_123-495-g6d5fed324)",
-        )
-        self.assertEqual(
-            toolchain["binding_profile"],
-            "gdextension/web_core_build_profile.json",
-        )
+        toolchains = {
+            "web_core": json.loads(
+                (ROOT / "tools" / "web_toolchain.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+            "web_extended": json.loads(
+                (ROOT / "tools" / "web_extended_toolchain.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+        }
         actual_godot_cpp = subprocess.check_output(
             [
                 "git",
@@ -50,19 +46,54 @@ class WebSourceContractTests(unittest.TestCase):
             ],
             text=True,
         ).strip()
-        self.assertEqual(actual_godot_cpp, toolchain["godot_cpp_commit"])
+        for expected_profile, toolchain in toolchains.items():
+            self.assertEqual(toolchain["schema"], "mterrain-web-toolchain-v1")
+            self.assertEqual(
+                toolchain["godot"]["version"],
+                "4.7.stable.official.5b4e0cb0f",
+            )
+            self.assertEqual(toolchain["platform"], "web")
+            self.assertEqual(toolchain["architecture"], "wasm32")
+            self.assertEqual(toolchain["precision"], "single")
+            self.assertFalse(toolchain["threads"])
+            self.assertEqual(toolchain["profile"], expected_profile)
+            self.assertEqual(toolchain["brotli_version"], "1.2.0")
+            self.assertEqual(toolchain["brotli_quality"], 11)
+            self.assertEqual(
+                toolchain["binaryen_version"],
+                "wasm-opt version 124 (version_123-495-g6d5fed324)",
+            )
+            self.assertEqual(
+                toolchain["binding_profile"],
+                "gdextension/web_core_build_profile.json",
+            )
+            self.assertEqual(actual_godot_cpp, toolchain["godot_cpp_commit"])
+        self.assertEqual(
+            toolchains["web_extended"]["runtime_companion"],
+            "runtime/web_extended_runtime.gd",
+        )
+        self.assertEqual(
+            toolchains["web_extended"]["native_binding_profile_shared_with"],
+            "web_core",
+        )
 
     def test_web_core_profile_fails_closed(self) -> None:
         sconstruct = (ROOT / "gdextension" / "SConstruct").read_text(
             encoding="utf-8"
         )
-        self.assertIn('mterrain_profile == "web_core" and env["threads"]', sconstruct)
+        self.assertIn(
+            'mterrain_profile in ("web_core", "web_extended") and env["threads"]',
+            sconstruct,
+        )
         self.assertIn('env["platform"] == "web"', sconstruct)
         self.assertIn('("moctree.cpp", "mtool.cpp")', sconstruct)
         for source_group in ("grass", "navmesh", "octmesh", "path", "hlod"):
             self.assertIn(f'Glob("src/{source_group}/*.cpp")', sconstruct)
         self.assertIn('"MTERRAIN_CORE_ONLY"', sconstruct)
+        self.assertIn('"MTERRAIN_BOUNDED_RUNTIME"', sconstruct)
         self.assertIn('"MTERRAIN_SINGLE_THREADED"', sconstruct)
+        self.assertIn('"MTERRAIN_PROFILE_WEB_EXTENDED"', sconstruct)
+        self.assertIn('"MTERRAIN_PROFILE_WEB_CORE"', sconstruct)
 
     def test_web_binding_profile_omits_editor_and_rendering_device_classes(self) -> None:
         profile = json.loads(
@@ -108,16 +139,48 @@ class WebSourceContractTests(unittest.TestCase):
         implementation = (
             ROOT / "gdextension" / "src" / "mterrain.cpp"
         ).read_text(encoding="utf-8")
+        runtime_api = (
+            ROOT / "gdextension" / "src" / "mterrain_runtime_api.cpp"
+        ).read_text(encoding="utf-8")
+        scheduler = (
+            ROOT / "gdextension" / "src" / "mruntime_scheduler.cpp"
+        ).read_text(encoding="utf-8")
+        combined = implementation + runtime_api
         for method in (
             "get_runtime_bridge_api_version",
             "get_runtime_capabilities",
             "apply_height_tile",
+            "queue_height_tile",
+            "step_runtime_work",
+            "cancel_runtime_work",
+            "release_runtime_tile",
+            "request_runtime_collision_focus",
+            "configure_runtime_material",
         ):
             self.assertIn(method, header)
-            self.assertIn(method, implementation)
-        self.assertIn("width > 67 || height > 67", implementation)
-        self.assertIn("sample_count > 4489", implementation)
-        self.assertIn("std::isfinite", implementation)
+            self.assertIn(method, combined)
+        self.assertIn("return 2;", implementation)
+        self.assertNotIn("#if 0", implementation)
+        self.assertIn("MAX_TILE_SIDE = 67", scheduler)
+        self.assertIn("MAX_TILE_SAMPLES = 4489", scheduler)
+        self.assertIn("std::isfinite", scheduler)
+        self.assertIn("WORK_GENERATE_NORMALS", scheduler)
+        self.assertIn("WORK_ROLLBACK_HEIGHTS", scheduler)
+        self.assertIn("WORK_ROLLBACK_NORMALS", scheduler)
+        self.assertIn("WORK_ROLLBACK_APPLY", scheduler)
+        self.assertIn("remaining_samples >= normal_width", scheduler)
+        self.assertIn("apply_region_cursor", scheduler)
+        self.assertIn("rollback_apply_region_cursor", scheduler)
+        self.assertIn("MAX_COMPLETED_RESULTS = 256", scheduler)
+        self.assertIn('fail("coalesced"', scheduler)
+        self.assertIn('collision["regions"]', scheduler)
+        self.assertIn('runtime_region_collision_generation', scheduler)
+        self.assertIn("collision_region_limit_exceeded", scheduler)
+        self.assertIn("collision_focus_explicit", scheduler)
+        self.assertIn("active_collision_regions", scheduler)
+        self.assertIn("collision_memory_budget_exceeded", scheduler)
+        self.assertIn("schedule_resident_release", scheduler)
+        self.assertIn("longest_step_usec", scheduler)
         self.assertIn(
             'ERR_FAIL_COND_MSG(!input, "This build profile requires runtime_memory_only")',
             implementation,
@@ -133,6 +196,8 @@ class WebSourceContractTests(unittest.TestCase):
         )
         self.assertIn("bool runtime_memory_only = false", grid)
         self.assertIn("unload(mres,!grid->runtime_memory_only)", region)
+        self.assertIn("runtime_mark_region_normals_dirty", grid)
+        self.assertNotIn("runtime_loaded_region_count", grid)
         self.assertIn("if(save_before_unload)", image)
         for capability in (
             "heightfield_terrain",
@@ -144,19 +209,24 @@ class WebSourceContractTests(unittest.TestCase):
         ):
             self.assertIn(f'capabilities["{capability}"]', implementation)
         self.assertIn('capabilities["api_stability"] = "experimental"', implementation)
-        tile_apply = implementation[implementation.index("Dictionary MTerrain::apply_height_tile") :]
+        tile_apply = scheduler[
+            scheduler.index("Dictionary MRuntimeScheduler::step") :
+        ]
+        forward_write = tile_apply.index(
+            "if(work.phase == WORK_WRITE_HEIGHTS"
+        )
         self.assertLess(
             tile_apply.index("grid->can_set_height_by_pixel"),
-            tile_apply.index("grid->set_height_by_pixel(\n"),
+            forward_write,
         )
         self.assertLess(
             tile_apply.index("grid->can_update_normals"),
-            tile_apply.index("grid->set_height_by_pixel(\n"),
+            forward_write,
         )
         self.assertIn('fail("normal_halo_not_resident"', tile_apply)
         self.assertLess(
             tile_apply.index("grid->update_normals"),
-            tile_apply.index("grid->update_all_dirty_image_texture(update_collision)"),
+            tile_apply.index("grid->runtime_upload_region_ids"),
         )
 
     def test_web_core_registration_excludes_extended_classes(self) -> None:
@@ -174,8 +244,11 @@ class WebSourceContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('"build", "godot-cpp", requested_binding_tuple', sconstruct)
+        self.assertIn('binding_profile_key = (', sconstruct)
+        self.assertIn('"web_core"', sconstruct)
         self.assertIn("variant_dir=str(binding_variant_dir)", sconstruct)
         self.assertIn("duplicate=1", sconstruct)
+        self.assertIn("env = binding_env.Clone()", sconstruct)
         self.assertNotIn('ARGUMENTS["generate_bindings"]', sconstruct)
         self.assertIn('env.Requires(objects, env["LIBS"])', sconstruct)
         self.assertIn('plugin_root.name == "m_terrain"', sconstruct)
@@ -196,13 +269,21 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn('"--untracked-files=normal"', receipt)
         self.assertIn('"mterrain_tree": git("rev-parse", "HEAD^{tree}")', receipt)
         self.assertIn('"height_tile_apply": True', receipt)
-        self.assertIn('"bounded_update_scheduler": False', receipt)
+        self.assertIn('"bounded_update_scheduler": True', receipt)
+        self.assertIn('"bounded_collision": True', receipt)
+        self.assertIn('extended = args.profile == "web_extended"', receipt)
+        self.assertIn('receipt["runtime_companion"]', receipt)
         self.assertIn('"binaryen": args.wasm_opt_version', receipt)
         self.assertIn('"wasm_features": wasm_features', receipt)
         self.assertIn('local wasm_features', build_script)
         self.assertIn('--enable-threads', build_script)
         self.assertIn('--enable-shared-everything', build_script)
+        self.assertIn('WEB_PROFILE="${2:-${MTERRAIN_WEB_PROFILE:-web_core}}"', build_script)
+        self.assertIn('web_extended)', build_script)
         self.assertIn('shutil.rmtree(stage / ".godot", ignore_errors=True)', exporter)
+        self.assertIn('custom_features="mterrain_{profile}"', exporter)
+        self.assertIn('ROOT / "runtime" / "web_extended_runtime.gd"', exporter)
+        self.assertIn('shutil.rmtree(stage / "fixtures"', exporter)
 
     def test_runtime_smokes_require_an_initialized_height_tile(self) -> None:
         native_smoke = (ROOT / "tests" / "runtime_smoke" / "smoke.gd").read_text(
@@ -214,6 +295,9 @@ class WebSourceContractTests(unittest.TestCase):
         browser_runner = (ROOT / "scripts" / "run_web_smoke.py").read_text(
             encoding="utf-8"
         )
+        native_runner = (
+            ROOT / "scripts" / "run_native_core_smoke.sh"
+        ).read_text(encoding="utf-8")
         for source in (native_smoke, web_smoke, browser_runner):
             self.assertIn("initialized_tile_samples=4489", source)
             self.assertIn("rejected_non_finite=1", source)
@@ -225,6 +309,101 @@ class WebSourceContractTests(unittest.TestCase):
             self.assertIn('set_terrain_size", Vector2i(8, 8)', source)
             self.assertIn('set_region_size", 4', source)
             self.assertIn("invalid_heights[0] = NAN", source)
+            self.assertIn("seam-left", source)
+            self.assertIn("PhysicsRayQueryParameters3D.create", source)
+            self.assertIn("Texture2DArray.new()", source)
+        self.assertIn("teleport-a", native_smoke)
+        self.assertIn("max_resident_tiles\": 2", native_smoke)
+        self.assertIn('EXPECTED_PROFILE="${2:-${MTERRAIN_EXPECTED_PROFILE:-web_core}}"', native_runner)
+        self.assertIn('MTERRAIN_EXPECTED_PROFILE="$EXPECTED_PROFILE"', native_runner)
+
+    def test_full_profile_smoke_requires_native_feature_registration(self) -> None:
+        smoke = (
+            ROOT / "tests" / "full_profile_smoke" / "smoke.gd"
+        ).read_text(encoding="utf-8")
+        for class_name in (
+            "MOctree",
+            "MGrass",
+            "MNavigationRegion3D",
+            "MPath",
+            "MHlod",
+        ):
+            self.assertIn(f'&"{class_name}"', smoke)
+        self.assertIn("MTERRAIN_FULL_PROFILE_SMOKE_OK", smoke)
+
+    def test_compatibility_material_is_bounded_and_texture_optional(self) -> None:
+        shader = (ROOT / "start_opengl.gdshader").read_text(encoding="utf-8")
+        forward_shader = (ROOT / "start.gdshader").read_text(encoding="utf-8")
+        runtime_api = (
+            ROOT / "gdextension" / "src" / "mterrain_runtime_api.cpp"
+        ).read_text(encoding="utf-8")
+        for shader_source in (shader, forward_shader):
+            self.assertIn("mterrain_surface_textures_enabled", shader_source)
+            self.assertIn("sampler2DArray runtime_surface_layers", shader_source)
+            self.assertIn("semantic_color", shader_source)
+            self.assertIn("ALBEDO = surface_color", shader_source)
+            self.assertIn("if(weight_total > 0.0001)", shader_source)
+        self.assertIn("surface_layer_count > 4", runtime_api)
+        self.assertIn("surface_layers->get_layers() > 16", runtime_api)
+        self.assertIn("missing_texture_readable", runtime_api)
+        self.assertIn("runtime_material_shader_contract", runtime_api)
+        material_source = (
+            ROOT / "gdextension" / "src" / "mterrain_material.cpp"
+        ).read_text(encoding="utf-8")
+        self.assertIn("uniforms[-1] = defaults", material_source)
+
+    def test_extended_runtime_keeps_capabilities_data_first_and_bounded(self) -> None:
+        runtime = (
+            ROOT / "runtime" / "web_extended_runtime.gd"
+        ).read_text(encoding="utf-8")
+        smoke = (
+            ROOT / "tests" / "extended_runtime_smoke" / "smoke.gd"
+        ).read_text(encoding="utf-8")
+        for method in (
+            "queue_foliage",
+            "queue_navigation",
+            "queue_path",
+            "queue_mesh_hlod",
+            "step_runtime_work",
+            "release_projection",
+        ):
+            self.assertIn(f"func {method}", runtime)
+        self.assertIn('"runtime_navigation_baking": false', runtime)
+        self.assertIn('"runtime_curve_deformation": false', runtime)
+        self.assertIn('"allow_in_memory_resources": false', runtime)
+        self.assertIn("MAX_FOLIAGE_LIMIT := 8192", runtime)
+        self.assertIn("MAX_MESH_INDICES := 262144", runtime)
+        self.assertIn("MAX_NAVIGATION_INDICES := 65536", runtime)
+        self.assertIn("MAX_HLOD_LEVELS := 4", runtime)
+        self.assertIn("MAX_ALLOWED_RESOURCE_PATHS := 256", runtime)
+        self.assertIn("MAX_RESULT_RECEIPTS := 256", runtime)
+        self.assertIn("hlod_total_vertex_limit", runtime)
+        self.assertIn("hlod_total_index_limit", runtime)
+        self.assertIn("navigation_index_out_of_bounds", runtime)
+        self.assertIn("hlod_hysteresis_m", runtime)
+        self.assertIn("installed_projection_limit", runtime)
+        self.assertIn("resource_policy_in_use", runtime)
+        self.assertIn("work_key_conflict", runtime)
+        self.assertIn('path.begins_with("res://")', runtime)
+        self.assertIn("if allowlist.is_empty() or path not in allowlist", runtime)
+        self.assertNotIn("Thread.new", runtime)
+        self.assertNotIn("bake_from_source_geometry_data", runtime)
+        self.assertIn("NavigationServer3D.map_get_path", smoke)
+        self.assertIn("MTERRAIN_WEB_EXTENDED_SMOKE_OK", smoke)
+
+    def test_extended_export_fixtures_include_their_source_resources(self) -> None:
+        ignore_rules = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("!tests/web_smoke/fixtures/*.obj", ignore_rules)
+        for fixture in (
+            "grass_cluster.obj",
+            "road_strip.obj",
+            "rock_near.obj",
+            "rock_far.obj",
+        ):
+            source = ROOT / "tests" / "web_smoke" / "fixtures" / fixture
+            import_metadata = source.with_suffix(source.suffix + ".import")
+            self.assertTrue(source.is_file(), fixture)
+            self.assertTrue(import_metadata.is_file(), import_metadata.name)
 
 
 if __name__ == "__main__":

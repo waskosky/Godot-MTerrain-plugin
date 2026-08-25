@@ -290,6 +290,22 @@ class MGrid {
     void clear_region_bounds();
     void update_physics(const Vector3& cam_pos);
 
+    Vector<int32_t> runtime_get_region_ids_for_pixel_bounds(
+        uint32_t left,
+        uint32_t right,
+        uint32_t top,
+        uint32_t bottom
+    ) const;
+    bool runtime_region_is_loaded(int32_t region_id) const;
+    bool runtime_load_region(int32_t region_id);
+    bool runtime_unload_region(int32_t region_id);
+    bool runtime_region_has_collision(int32_t region_id) const;
+    uint64_t runtime_region_collision_generation(int32_t region_id) const;
+    bool runtime_set_region_collision(int32_t region_id, bool enabled, bool refresh=false);
+    void runtime_mark_region_normals_dirty(const Vector<int32_t>& region_ids);
+    int32_t runtime_upload_region_ids(const Vector<int32_t>& region_ids);
+    uint64_t runtime_estimated_region_bytes(int32_t region_id) const;
+
     MImage* get_image_by_pixel(uint32_t x,uint32_t y, const int32_t index);
     _FORCE_INLINE_ Color get_pixel(uint32_t x,uint32_t y, const int32_t index) const;
     const uint8_t* get_pixel_by_pointer(uint32_t x,uint32_t y, const int32_t index);

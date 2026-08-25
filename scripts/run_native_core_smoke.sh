@@ -3,12 +3,20 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT="${1:-}"
+EXPECTED_PROFILE="${2:-${MTERRAIN_EXPECTED_PROFILE:-web_core}}"
 GODOT_BIN="${GODOT_BIN:-${GODOT_CMD:-}}"
 
 if [[ -z "$ARTIFACT" || ! -f "$ARTIFACT" ]]; then
-	printf 'Usage: %s /absolute/path/to/libMTerrain.native.debug.library\n' "$0" >&2
+	printf 'Usage: %s /absolute/path/to/libMTerrain.native.debug.library [web_core|web_extended]\n' "$0" >&2
 	exit 2
 fi
+case "$EXPECTED_PROFILE" in
+	web_core|web_extended) ;;
+	*)
+		printf 'Expected profile must be web_core or web_extended.\n' >&2
+		exit 2
+		;;
+esac
 if [[ -z "$GODOT_BIN" || ! -x "$GODOT_BIN" ]]; then
 	printf 'Set GODOT_BIN to the pinned Godot 4.7 editor executable.\n' >&2
 	exit 1
@@ -38,7 +46,8 @@ case "$(uname -s)" in
 		;;
 esac
 
-OUTPUT="$($GODOT_BIN --headless --path "$STAGE_DIR" --script res://smoke.gd 2>&1)" || {
+OUTPUT="$(MTERRAIN_EXPECTED_PROFILE="$EXPECTED_PROFILE" \
+	"$GODOT_BIN" --headless --path "$STAGE_DIR" --script res://smoke.gd 2>&1)" || {
 	printf '%s\n' "$OUTPUT" >&2
 	exit 1
 }

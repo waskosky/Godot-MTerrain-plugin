@@ -29,6 +29,7 @@
     "StandardMaterial3D",
     "Texture",
     "Texture2D",
+    "Texture2DArray",
     "Timer",
     "Viewport",
     "World3D"

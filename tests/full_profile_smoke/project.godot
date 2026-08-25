@@ -1,0 +1,11 @@
+; Minimal project used to verify that the full MTerrain profile registers.
+config_version=5
+
+[application]
+
+config/name="MTerrain Full Profile Smoke"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

@@ -14,6 +14,9 @@ tmp/*
 *.lo
 *.o
 *.obj
+# Small deterministic Wavefront fixtures are source inputs, not compiler
+# outputs. Their matching Godot import metadata is committed with them.
+!tests/web_smoke/fixtures/*.obj
 
 # Precompiled Headers
 *.gch

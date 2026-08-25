@@ -18,15 +18,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template-debug", required=True, type=Path)
     parser.add_argument("--native-library", required=True, type=Path)
     parser.add_argument(
-        "--web-library",
-        type=Path,
-        default=ROOT
-        / "build"
-        / "mterrain"
-        / "libMTerrain.web.template_debug.wasm32.nothreads.wasm",
+        "--profile",
+        choices=("web_core", "web_extended"),
+        default="web_core",
     )
     parser.add_argument(
-        "--output", type=Path, default=ROOT / "build" / "web-smoke"
+        "--web-library",
+        type=Path,
+        default=None,
+    )
+    parser.add_argument(
+        "--output", type=Path, default=None
     )
     return parser.parse_args()
 
@@ -38,14 +40,14 @@ def require_file(path: Path, label: str) -> Path:
     return path
 
 
-def export_preset() -> str:
-    return """[preset.0]
+def export_preset(profile: str) -> str:
+    return f"""[preset.0]
 
 name="Web Smoke"
 platform="Web"
 runnable=false
 dedicated_server=false
-custom_features="mterrain_web_core"
+custom_features="mterrain_{profile}"
 export_filter="all_resources"
 include_filter=""
 exclude_filter="web_templates/**"
@@ -81,6 +83,19 @@ progressive_web_app/icon_512x512=""
 
 def main() -> int:
     args = parse_args()
+    if args.web_library is None:
+        profile_dir = Path() if args.profile == "web_core" else Path("web_extended")
+        args.web_library = (
+            ROOT
+            / "build"
+            / "mterrain"
+            / profile_dir
+            / "libMTerrain.web.template_debug.wasm32.nothreads.wasm"
+        )
+    if args.output is None:
+        args.output = ROOT / "build" / (
+            "web-smoke" if args.profile == "web_core" else "web-extended-smoke"
+        )
     godot = require_file(args.godot, "Godot editor")
     template = require_file(args.template_debug, "Web debug template")
     native_library = require_file(args.native_library, "native editor library")
@@ -98,6 +113,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="mterrain-web-smoke-") as temp:
         stage = Path(temp)
         shutil.copytree(ROOT / "tests" / "web_smoke", stage, dirs_exist_ok=True)
+        if args.profile == "web_core":
+            shutil.rmtree(stage / "fixtures", ignore_errors=True)
         # Never let a local import/cache directory influence the staged export.
         shutil.rmtree(stage / ".godot", ignore_errors=True)
         (stage / ".godot").mkdir()
@@ -123,6 +140,13 @@ def main() -> int:
             "start_opengl.gdshader.uid",
         ):
             shutil.copy2(ROOT / asset, addon_dir / asset)
+        if args.profile == "web_extended":
+            runtime_dir = stage / "runtime"
+            runtime_dir.mkdir()
+            shutil.copy2(
+                ROOT / "runtime" / "web_extended_runtime.gd",
+                runtime_dir / "web_extended_runtime.gd",
+            )
         if platform.system() == "Darwin":
             native_name = "libMTerrain.macos.template_debug.universal.dylib"
         elif platform.system() == "Linux":
@@ -133,7 +157,9 @@ def main() -> int:
         template_dir = stage / "web_templates"
         template_dir.mkdir()
         shutil.copy2(template, template_dir / "godot-web-debug.zip")
-        (stage / "export_presets.cfg").write_text(export_preset(), encoding="utf-8")
+        (stage / "export_presets.cfg").write_text(
+            export_preset(args.profile), encoding="utf-8"
+        )
 
         command = [
             str(godot),

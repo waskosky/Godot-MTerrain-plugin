@@ -897,6 +897,185 @@ void MGrid::update_physics(const Vector3& cam_pos){
     }
 }
 
+Vector<int32_t> MGrid::runtime_get_region_ids_for_pixel_bounds(
+    uint32_t left,
+    uint32_t right,
+    uint32_t top,
+    uint32_t bottom
+) const {
+    Vector<int32_t> result;
+    if(!is_created() || left > right || top > bottom || right >= pixel_width || bottom >= pixel_height){
+        return result;
+    }
+    auto append_unique = [&result](int32_t region_id) {
+        if(region_id < 0 || result.find(region_id) >= 0){
+            return;
+        }
+        result.push_back(region_id);
+    };
+    for(uint32_t y=top; y<=bottom; y++){
+        for(uint32_t x=left; x<=right; x++){
+            bool duplicate_x = (x%rp == 0 && x!=0);
+            bool duplicate_y = (y%rp == 0 && y!=0);
+            const uint32_t rx = (x/rp) - (uint32_t)duplicate_x;
+            const uint32_t ry = (y/rp) - (uint32_t)duplicate_y;
+            append_unique((int32_t)(rx + ry*_region_grid_size.x));
+            duplicate_x = duplicate_x && rx != (uint32_t)_region_grid_bound.right;
+            duplicate_y = duplicate_y && ry != (uint32_t)_region_grid_bound.bottom;
+            if(duplicate_x){
+                append_unique((int32_t)(rx+1 + ry*_region_grid_size.x));
+            }
+            if(duplicate_y){
+                append_unique((int32_t)(rx + (ry+1)*_region_grid_size.x));
+            }
+            if(duplicate_x && duplicate_y){
+                append_unique((int32_t)(rx+1 + (ry+1)*_region_grid_size.x));
+            }
+        }
+    }
+    result.sort();
+    return result;
+}
+
+bool MGrid::runtime_region_is_loaded(int32_t region_id) const {
+    return is_created() && region_id >= 0 && region_id < _regions_count &&
+        regions[region_id].get_data_load_status_relax();
+}
+
+bool MGrid::runtime_load_region(int32_t region_id) {
+    if(!is_created() || region_id < 0 || region_id >= _regions_count){
+        return false;
+    }
+    MRegion* region = regions + region_id;
+    if(region->get_data_load_status_relax()){
+        return true;
+    }
+    region->to_be_remove = false;
+    region->load();
+    region->is_data_loaded_reg_thread = true;
+    region->set_data_load_status(true);
+    const RID material = region->get_material_rid();
+    const int32_t point_left = region->pos.x*region_size;
+    const int32_t point_top = region->pos.z*region_size;
+    const int32_t point_right = MIN(_size.x, point_left+region_size);
+    const int32_t point_bottom = MIN(_size.z, point_top+region_size);
+    for(int32_t z=point_top; z<point_bottom; z++){
+        for(int32_t x=point_left; x<point_right; x++){
+            MPoint& point = points[z][x];
+            if(point.has_instance && point.instance.is_valid()){
+                RenderingServer::get_singleton()->instance_geometry_set_material_override(
+                    point.instance,
+                    material
+                );
+            }
+        }
+    }
+    return region->get_data_load_status();
+}
+
+bool MGrid::runtime_unload_region(int32_t region_id) {
+    if(!is_created() || region_id < 0 || region_id >= _regions_count){
+        return false;
+    }
+    MRegion* region = regions + region_id;
+    if(!region->get_data_load_status_relax()){
+        return true;
+    }
+    region->to_be_remove = true;
+    region->remove_physics();
+    region->unload();
+    const int32_t point_left = region->pos.x*region_size;
+    const int32_t point_top = region->pos.z*region_size;
+    const int32_t point_right = MIN(_size.x, point_left+region_size);
+    const int32_t point_bottom = MIN(_size.z, point_top+region_size);
+    for(int32_t z=point_top; z<point_bottom; z++){
+        for(int32_t x=point_left; x<point_right; x++){
+            MPoint& point = points[z][x];
+            if(point.has_instance && point.instance.is_valid()){
+                RenderingServer::get_singleton()->instance_geometry_set_material_override(
+                    point.instance,
+                    RID()
+                );
+            }
+        }
+    }
+    _terrain_material->remove_material(region_id);
+    region->set_material(RID());
+    region->is_data_loaded_reg_thread = false;
+    region->to_be_remove = false;
+    return !region->get_data_load_status_relax();
+}
+
+bool MGrid::runtime_region_has_collision(int32_t region_id) const {
+    return is_created() && region_id >= 0 && region_id < _regions_count &&
+        regions[region_id].has_physics();
+}
+
+uint64_t MGrid::runtime_region_collision_generation(int32_t region_id) const {
+    if(!is_created() || region_id < 0 || region_id >= _regions_count){
+        return 0;
+    }
+    return regions[region_id].get_collision_generation();
+}
+
+bool MGrid::runtime_set_region_collision(int32_t region_id, bool enabled, bool refresh) {
+    if(!is_created() || region_id < 0 || region_id >= _regions_count){
+        return false;
+    }
+    MRegion* region = regions + region_id;
+    if(enabled){
+        if(!region->get_data_load_status_relax()){
+            return false;
+        }
+        if(refresh && region->has_physics()){
+            region->update_physics();
+        } else {
+            region->create_physics();
+        }
+        return region->has_physics();
+    }
+    region->remove_physics();
+    return !region->has_physics();
+}
+
+void MGrid::runtime_mark_region_normals_dirty(const Vector<int32_t>& region_ids) {
+    for(int32_t region_id : region_ids){
+        if(region_id < 0 || region_id >= _regions_count ||
+            !regions[region_id].get_data_load_status_relax()){
+            continue;
+        }
+        regions[region_id].make_normals_dirty();
+    }
+}
+
+int32_t MGrid::runtime_upload_region_ids(const Vector<int32_t>& region_ids) {
+    int32_t upload_count = 0;
+    for(int32_t region_id : region_ids){
+        if(region_id < 0 || region_id >= _regions_count){
+            continue;
+        }
+        MRegion* region = regions + region_id;
+        if(!region->get_data_load_status_relax()){
+            continue;
+        }
+        for(MImage* image : region->images){
+            if(image == nullptr || !image->is_dirty){
+                continue;
+            }
+            image->update_texture(image->current_scale,true);
+            upload_count++;
+        }
+    }
+    return upload_count;
+}
+
+uint64_t MGrid::runtime_estimated_region_bytes(int32_t region_id) const {
+    if(!is_created() || region_id < 0 || region_id >= _regions_count){
+        return 0;
+    }
+    return regions[region_id].get_estimated_runtime_bytes();
+}
+
 MImage* MGrid::get_image_by_pixel(uint32_t x,uint32_t y, const int32_t index){
     if(!has_pixel(x,y)){
         return nullptr;

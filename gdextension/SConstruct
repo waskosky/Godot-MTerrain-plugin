@@ -8,7 +8,7 @@ import shutil
 mterrain_profile = ARGUMENTS.pop("mterrain_profile", "full")
 mterrain_output_dir = ARGUMENTS.pop("mterrain_output_dir", "")
 
-valid_profiles = ("full", "runtime", "web_core")
+valid_profiles = ("full", "runtime", "web_core", "web_extended")
 if mterrain_profile not in valid_profiles:
     raise ValueError(
         "mterrain_profile must be one of: " + ", ".join(valid_profiles)
@@ -27,10 +27,20 @@ requested_binding_tuple = "-".join(
         ("threads", "default"),
     )
 )
-binding_variant_dir = Path(Dir(".").abspath).parent.joinpath(
-    "build", "godot-cpp", requested_binding_tuple, mterrain_profile
+# Both Web profiles intentionally expose the same native MTerrain closure; the
+# optional extended features live in the separately packaged runtime companion.
+# Reuse the exact generated binding tuple instead of compiling an identical
+# godot-cpp archive twice. A source-contract test requires the two JSON profiles
+# to remain byte-for-byte equivalent while this sharing is enabled.
+binding_profile_key = (
+    "web_core"
+    if mterrain_profile in ("web_core", "web_extended")
+    else mterrain_profile
 )
-env = SConscript(
+binding_variant_dir = Path(Dir(".").abspath).parent.joinpath(
+    "build", "godot-cpp", requested_binding_tuple, binding_profile_key
+)
+binding_env = SConscript(
     "godot-cpp/SConstruct",
     variant_dir=str(binding_variant_dir),
     # godot-cpp mixes generated files with a few hand-authored headers/sources;
@@ -38,15 +48,20 @@ env = SConscript(
     # variant tree instead of unresolved source nodes on clean full builds.
     duplicate=1,
 )
+# Profile-specific preprocessor definitions belong only to MTerrain objects.
+# Mutating the environment returned by godot-cpp would retroactively change
+# its command signatures, forcing an identical binding archive to rebuild when
+# switching between web_core and web_extended.
+env = binding_env.Clone()
 
-if env["platform"] == "web" and mterrain_profile != "web_core":
+if env["platform"] == "web" and mterrain_profile not in ("web_core", "web_extended"):
     raise ValueError(
-        "Web builds currently support only mterrain_profile=web_core"
+        "Web builds support only mterrain_profile=web_core or web_extended"
     )
-if mterrain_profile == "web_core" and env["threads"]:
-    raise ValueError("mterrain_profile=web_core requires threads=no")
-if mterrain_profile == "web_core" and env["precision"] != "single":
-    raise ValueError("mterrain_profile=web_core currently requires precision=single")
+if mterrain_profile in ("web_core", "web_extended") and env["threads"]:
+    raise ValueError("Web runtime profiles require threads=no")
+if mterrain_profile in ("web_core", "web_extended") and env["precision"] != "single":
+    raise ValueError("Web runtime profiles currently require precision=single")
 
 source_dir = Path(Dir(".").abspath)
 if mterrain_output_dir:
@@ -77,7 +92,7 @@ src.extend(Glob("src/util/*.cpp"))
 src.extend(Glob("src/height_brushes/*.cpp"))
 src.extend(Glob("src/color_brushes/*.cpp"))
 
-if mterrain_profile == "web_core":
+if mterrain_profile in ("web_core", "web_extended"):
     src = [
         node for node in src
         if node.name not in ("moctree.cpp", "mtool.cpp")
@@ -86,10 +101,14 @@ if mterrain_profile == "web_core":
         CPPDEFINES=[
             "MTERRAIN_CORE_ONLY",
             "MTERRAIN_MEMORY_ONLY_DEFAULT",
-            "MTERRAIN_PROFILE_WEB_CORE",
+            "MTERRAIN_BOUNDED_RUNTIME",
             "MTERRAIN_SINGLE_THREADED",
         ]
     )
+    if mterrain_profile == "web_extended":
+        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_WEB_EXTENDED"])
+    else:
+        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_WEB_CORE"])
 else:
     src.extend(Glob("src/hlod/*.cpp"))
     src.extend(Glob("src/grass/*.cpp"))

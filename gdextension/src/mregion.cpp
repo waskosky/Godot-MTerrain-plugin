@@ -1,5 +1,7 @@
 #include "mregion.h"
 
+#include <limits>
+
 #include <godot_cpp/classes/reg_ex.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
@@ -24,7 +26,8 @@ MRegion::~MRegion(){
 }
 
 void MRegion::set_material(RID input) {
-    if(!input.is_valid()){
+	if(!input.is_valid()){
+		_material_rid = RID();
         return;
     }
 	_material_rid = input;
@@ -165,6 +168,7 @@ void MRegion::create_physics() {
 	if(has_physic || heightmap->is_corrupt_file || heightmap->is_null_image || to_be_remove || !get_data_load_status()){
 		return;
 	}
+	recalculate_min_max_height();
 	physic_body = PhysicsServer3D::get_singleton()->body_create();
 	PhysicsServer3D::get_singleton()->body_attach_object_instance_id(physic_body,grid->instance_id);
 	PhysicsServer3D::get_singleton()->body_set_mode(physic_body, PhysicsServer3D::BodyMode::BODY_MODE_STATIC);
@@ -202,6 +206,7 @@ void MRegion::create_physics() {
 		PhysicsServer3D::get_singleton()->body_set_param(physic_body,PhysicsServer3D::BODY_PARAM_FRICTION,friction);
 	}
 	has_physic = true;
+	collision_generation++;
 }
 
 void MRegion::update_physics(){
@@ -209,6 +214,7 @@ void MRegion::update_physics(){
 	if(!has_physic){
 		return;
 	}
+	recalculate_min_max_height();
 	Dictionary d;
 	d["width"] = heightmap->width;
 	d["depth"] = heightmap->height;
@@ -227,6 +233,7 @@ void MRegion::update_physics(){
 	d["min_height"] = min_height;
 	d["max_height"] = max_height;
 	PhysicsServer3D::get_singleton()->shape_set_data(heightmap_shape, d);
+	collision_generation++;
 }
 
 void MRegion::remove_physics(){
@@ -239,6 +246,48 @@ void MRegion::remove_physics(){
 	physic_body = RID();
 	heightmap_shape = RID();
 	has_physic = false;
+	collision_generation++;
+}
+
+bool MRegion::has_physics() const {
+	return has_physic;
+}
+
+uint64_t MRegion::get_collision_generation() const {
+	return collision_generation;
+}
+
+uint64_t MRegion::get_estimated_runtime_bytes() const {
+	uint64_t total = 0;
+	for(int i=0; i < images.size(); i++){
+		const MImage* image = images[i];
+		if(image == nullptr || !image->is_init.load(std::memory_order_acquire)){
+			continue;
+		}
+		total += image->data.size();
+		for(int layer=1; layer < image->image_layers.size(); layer++){
+			if(image->image_layers[layer] != nullptr){
+				total += image->image_layers[layer]->size();
+			}
+		}
+	}
+	return total;
+}
+
+void MRegion::recalculate_min_max_height() {
+	if(heightmap == nullptr || !heightmap->is_ready_for_runtime_write()){
+		return;
+	}
+	if(is_min_max_height_calculated){
+		return;
+	}
+	min_height = std::numeric_limits<float>::infinity();
+	max_height = -std::numeric_limits<float>::infinity();
+	_calculate_min_max_height();
+	if(min_height > max_height){
+		min_height = -0.01f;
+		max_height = 0.01f;
+	}
 }
 
 real_t MRegion::get_closest_height(Vector3 pos){

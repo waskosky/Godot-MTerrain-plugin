@@ -2,13 +2,32 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TOOLCHAIN_FILE="$ROOT_DIR/tools/web_toolchain.json"
 BUILD_MODE="${1:-all}"
+WEB_PROFILE="${2:-${MTERRAIN_WEB_PROFILE:-web_core}}"
 
 case "$BUILD_MODE" in
 	debug|release|all) ;;
 	*)
-		printf 'Usage: %s [debug|release|all]\n' "$0" >&2
+		printf 'Usage: %s [debug|release|all] [web_core|web_extended]\n' "$0" >&2
+		exit 2
+		;;
+esac
+
+case "$WEB_PROFILE" in
+	web_core)
+		TOOLCHAIN_FILE="$ROOT_DIR/tools/web_toolchain.json"
+		BINDING_PROFILE="$ROOT_DIR/gdextension/web_core_build_profile.json"
+		OUTPUT_DIR="$ROOT_DIR/build/mterrain"
+		RECEIPT_PREFIX="web"
+		;;
+	web_extended)
+		TOOLCHAIN_FILE="$ROOT_DIR/tools/web_extended_toolchain.json"
+		BINDING_PROFILE="$ROOT_DIR/gdextension/web_core_build_profile.json"
+		OUTPUT_DIR="$ROOT_DIR/build/mterrain/web_extended"
+		RECEIPT_PREFIX="web-extended"
+		;;
+	*)
+		printf 'Usage: %s [debug|release|all] [web_core|web_extended]\n' "$0" >&2
 		exit 2
 		;;
 esac
@@ -123,7 +142,6 @@ if [[ "${MTERRAIN_REQUIRE_CLEAN:-0}" == "1" ]]; then
 fi
 
 API_DIR="$ROOT_DIR/build/web/api"
-OUTPUT_DIR="$ROOT_DIR/build/mterrain"
 RECEIPT_DIR="$ROOT_DIR/build/receipts"
 mkdir -p "$API_DIR" "$OUTPUT_DIR" "$RECEIPT_DIR"
 (
@@ -160,10 +178,10 @@ build_target() {
 		precision=single \
 		threads=no \
 		api_version=4.7 \
-		mterrain_profile=web_core \
+		mterrain_profile="$WEB_PROFILE" \
 		mterrain_output_dir="$OUTPUT_DIR" \
 		custom_api_file="$API_DIR/extension_api.json" \
-		build_profile="$ROOT_DIR/gdextension/web_core_build_profile.json" \
+		build_profile="$BINDING_PROFILE" \
 		-j"$JOBS"
 	local artifact="$OUTPUT_DIR/libMTerrain.web.$target.wasm32.nothreads.wasm"
 	if [[ ! -s "$artifact" ]]; then
@@ -177,9 +195,10 @@ build_target() {
 		exit 1
 	fi
 	python3 "$ROOT_DIR/scripts/write_web_build_receipt.py" \
+		--profile "$WEB_PROFILE" \
 		--artifact "$artifact" \
 		--api "$API_DIR/extension_api.json" \
-		--binding-profile "$ROOT_DIR/gdextension/web_core_build_profile.json" \
+		--binding-profile "$BINDING_PROFILE" \
 		--godot-version "$ACTUAL_GODOT_VERSION" \
 		--emcc-version "$ACTUAL_EMCC" \
 		--scons-version "$ACTUAL_SCONS" \
@@ -190,7 +209,7 @@ build_target() {
 		--brotli-quality "$BROTLI_QUALITY" \
 		--target "$target" \
 		--toolchain "$TOOLCHAIN_FILE" \
-		--output "$RECEIPT_DIR/web-$target.json"
+		--output "$RECEIPT_DIR/$RECEIPT_PREFIX-$target.json"
 }
 
 if [[ "$BUILD_MODE" == "debug" || "$BUILD_MODE" == "all" ]]; then
