@@ -2,13 +2,21 @@
 MTerrain is an optimized terrain system/editor for Godot Engine.
 
 Web runtime work is governed by the standalone
-[Web Runtime Roadmap](docs/WEB_RUNTIME_ROADMAP.md). The primary browser target is
+[Web Runtime Roadmap](docs/WEB_RUNTIME_ROADMAP.md); see the
+[Web Runtime API](docs/WEB_RUNTIME_API.md) for exact methods, limits, ownership,
+and failure semantics. The primary browser target is
 Godot 4.7, wasm32, the Compatibility renderer, WebGL2, and a single-threaded
-GDExtension build. The experimental `web_core` slice compiles and initializes a
-four-region memory-only terrain, atomically applies a bounded height tile across
-both shared region borders, and renders it in local Chromium, Firefox, and WebKit
-automation. Bounded streaming, collision traversal, eviction, performance, CI
-artifacts, and physical-device gates remain before a Web runtime release claim.
+GDExtension build. Experimental runtime API v2 now provides bounded,
+cancellable, revision-safe height work, deterministic tile/region eviction,
+near-focus collision kept aligned across later edits, and constrained
+texture-optional materials. The opt-in
+`web_extended` package adds bounded data-first foliage, precomputed navigation,
+baked-path, and hysteretic mesh-HLOD projections without linking the native
+authoring subsystems. Its fixtures include exported grass/road/rock/navigation
+resources, moving revisions, and a real navigation path query. Native and local
+Chromium/Firefox/WebKit correctness checks are green; clean CI, headed
+representative-hardware performance, Safari proper, and physical Android/iOS
+gates remain before a Web runtime release claim.
 
 ![Screenshot_20230707_104154](https://github.com/mohsenph69/Godot-MTerrain-plugin/assets/52196206/7e3eb7da-af57-4ae5-8f55-f9fc1c8b26f8)
 
@@ -79,14 +87,18 @@ export GODOT_BIN=/path/to/Godot_4.7
 export SCONS_BIN=/path/to/scons-4.8.1
 export EMSDK_ENV=/path/to/emsdk/emsdk_env.sh
 export BROTLI_BIN=/path/to/brotli-1.2.0
-./scripts/build_web.sh all
+./scripts/build_web.sh all web_core
+# Optional data-first foliage/navigation/path/HLOD companion profile:
+./scripts/build_web.sh all web_extended
 ```
 
-The command produces debug and release wasm32 no-thread side modules under
-`build/mterrain/` and machine-readable receipts under `build/receipts/`. The
-receipts include hashes, raw/Brotli sizes, and the exact required WebAssembly
-features; the build fails if a no-thread artifact requests threads or shared
-memory. Both directories are ignored build output. A project must use a Godot
+Core debug/release wasm32 no-thread side modules are written under
+`build/mterrain/`; extended modules are isolated under
+`build/mterrain/web_extended/`. Machine-readable v2 receipts under
+`build/receipts/` include capability/profile data, hashes, raw/Brotli sizes, the
+exact required WebAssembly features, and the extended companion hash when
+selected. The build fails if a no-thread artifact requests threads or shared
+memory. These directories are ignored build output. A project must use a Godot
 4.7 Web export template built with GDExtension support, dynamic linking, and
 `threads=no`.
 
@@ -101,10 +113,15 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 The native and browser smoke helpers under `scripts/` require locally installed
-Godot templates and browser tooling; see the roadmap for the exact acceptance
-ladder and the capabilities that are intentionally still closed.
+Godot templates and browser tooling. `runtime/web_extended_runtime.gd` is
+packaged only for `web_extended`; its accepted resources are `res://` assets
+subject to an explicit allowlist, or in-memory resources only when the project
+deliberately enables that policy. It does not bake navigation, deform curves,
+generate runtime meshes, or create foliage/path collision. Mesh and navigation
+vertex/index ownership, cancellation, replacement, and HLOD focus changes are
+explicitly bounded. See the roadmap for the exact acceptance ladder.
 
-For the current initialized-tile smoke on an Intel macOS host, first build the
+For the bounded seam/collision smoke on an Intel macOS host, first build the
 matching native `web_core` library, then stage/export and run browsers
 sequentially:
 
@@ -115,9 +132,11 @@ sequentially:
   build_profile="$PWD/gdextension/web_core_build_profile.json"
 
 GODOT_BIN="$GODOT_BIN" ./scripts/run_native_core_smoke.sh \
-  build/mterrain/libMTerrain.macos.template_debug.x86_64.nothreads.dylib
+  build/mterrain/libMTerrain.macos.template_debug.x86_64.nothreads.dylib \
+  web_core
 
 python3 scripts/export_web_smoke.py \
+  --profile web_core \
   --godot "$GODOT_BIN" \
   --template-debug /path/to/godot.web.template_debug.wasm32.nothreads.dlink.zip \
   --native-library \
@@ -127,6 +146,15 @@ python3 scripts/run_web_smoke.py --browser chromium
 python3 scripts/run_web_smoke.py --browser firefox
 python3 scripts/run_web_smoke.py --browser webkit
 ```
+
+Select `--profile web_extended`, the corresponding native library under
+`build/mterrain/web_extended/`, `web_extended` as the native-smoke profile
+argument, and a separate output directory to exercise all four optional
+projections. The terrain bridge exposes its exact bounds through
+`get_runtime_capabilities()` and live queue/residency/collision metrics through
+`get_runtime_state()`; callers should use `queue_height_tile()` plus
+`step_runtime_work()` for frame-budgeted streaming and reserve
+`apply_height_tile()` for bounded compatibility calls.
 
 Use `arch=arm64` and the corresponding artifact name on Apple Silicon. Browser
 checks require Playwright and its selected engines. Each report retains both a

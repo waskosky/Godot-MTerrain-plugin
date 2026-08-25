@@ -139,14 +139,20 @@ OS, GPU renderer, viewport, thread profile, fixture, and quality profile.
 
 The active sequence is:
 
-1. Reproducible wasm32 single-thread build and load canary.
-2. Minimal runtime-only source profile.
-3. Versioned native height-tile batch API and no-save memory-fed mode.
-4. Bounded single-thread terrain update/LOD work.
-5. Near-focus collision and deterministic eviction.
-6. Compatibility material limits and representative browser evidence.
-7. Optional foliage, mesh HLOD, navigation, and path projections, one proven
-   capability at a time.
+1. Preserve the locally green API v2 scheduler, deterministic eviction,
+   fully budgeted rollback, active-shape collision refresh, and persistent
+   bounded Compatibility material fixtures.
+2. Move debug/release `web_core` and `web_extended` builds into clean-clone CI
+   with immutable receipts and native regression builds.
+3. Establish representative traversal/frame/memory budgets on headed hardware,
+   then close Chrome, Firefox, Safari, Android-class, and iOS-class release gates.
+4. Advance foliage, navigation, baked paths, and mesh HLOD independently from
+   their locally verified data-first/exported fixtures to representative-content
+   performance and long moving-residency evidence. Preserve strict vertex/index
+   ownership, actual path queries, and HLOD hysteresis. Do not enable foliage or
+   generated-path collision, navigation baking, or runtime mesh/curve deformation
+   without their separate bounded designs.
 
-Do not skip directly to broad feature parity. The detailed acceptance gates and
-decision points are maintained in `docs/WEB_RUNTIME_ROADMAP.md`.
+Do not collapse the core and extended gates into a broad feature-parity claim.
+The detailed acceptance gates and decision points are maintained in
+`docs/WEB_RUNTIME_ROADMAP.md`.

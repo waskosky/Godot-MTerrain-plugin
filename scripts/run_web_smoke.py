@@ -197,6 +197,17 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
         )
         screenshot = args.evidence_dir / f"web-smoke-{args.browser}.png"
         await page.screenshot(path=str(screenshot))
+        # Firefox can batch the console callback until the WebGL readback or
+        # screenshot yields to its event loop. Re-sample after both operations
+        # so an on-time success marker cannot be misreported as absent.
+        marker = next(
+            (
+                entry["text"]
+                for entry in console
+                if "MTERRAIN_WEB_SMOKE_OK" in entry["text"]
+            ),
+            marker,
+        )
         await browser.close()
 
     report: dict[str, object] = {

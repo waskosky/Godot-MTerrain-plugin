@@ -20,7 +20,7 @@ shadow_enabled = false
 
 [node name="Panel" type="ColorRect" parent="Overlay"]
 offset_left = 18.0
-offset_top = 268.0
+offset_top = 238.0
 offset_right = 474.0
 offset_bottom = 342.0
 color = Color(0.025, 0.09, 0.085, 0.9)
@@ -31,8 +31,8 @@ layout_mode = 0
 offset_left = 14.0
 offset_top = 8.0
 offset_right = 442.0
-offset_bottom = 66.0
+offset_bottom = 96.0
 theme_override_colors/font_color = Color(0.82, 1, 0.9, 1)
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 16
 text = "Loading MTerrain Web extension…"
 vertical_alignment = 1

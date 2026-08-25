@@ -1,7 +1,8 @@
 # MTerrain Web Runtime Roadmap
 
-- Status: active delivery; repository contract complete and first initialized
-  height-projection slice locally verified on 2026-08-24
+- Status: active delivery; Milestone 3/4 implementations and the first bounded
+  `web_extended` projections locally verified on 2026-08-24; representative
+  hardware, physical-mobile, clean-CI, and release gates remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -26,6 +27,10 @@ measured independently:
 - constrained Compatibility materials;
 - later, separately gated foliage, mesh HLOD, navigation, and paths.
 
+The implemented method signatures, bounds, ownership rules, and error semantics
+are maintained in `WEB_RUNTIME_API.md`; this document owns sequencing, decisions,
+evidence, and release gates.
+
 The Web runtime must remain optional. A project that never exports to Web should
 retain the normal native MTerrain workflow and should not pay for Web-specific
 fallbacks in its hot path.
@@ -41,13 +46,16 @@ The source retains these useful foundations:
 - camera-relative terrain and object LOD;
 - an MIT-licensed C++ GDExtension with a pinned `godot-cpp` submodule.
 
-The first implementation slice is now present:
+The implemented local release-candidate slice now includes:
 
-- `full`, `runtime`, and fail-closed `web_core` source profiles exist. Web accepts
-  only single-precision, no-thread `web_core`; its C++ closure excludes editor,
-  octree-object, grass, navigation, path, mesh-HLOD, and decal sources.
+- `full`, `runtime`, `web_core`, and `web_extended` source profiles exist. Web
+  accepts only single-precision, no-thread core/extended profiles. Their shared
+  C++ closure excludes editor, octree-object, native grass, navigation, path,
+  mesh-HLOD, and decal sources; the extended features are a separately packaged,
+  data-first runtime companion rather than the native authoring implementations.
 - Godot 4.7 stable, its exact GDExtension API, `godot-cpp`, Emscripten, emsdk,
-  Binaryen, SCons, and Brotli are pinned in `tools/web_toolchain.json`.
+  Binaryen, SCons, and Brotli are pinned in `tools/web_toolchain.json` and
+  `tools/web_extended_toolchain.json`.
 - Debug and release wasm32 no-thread manifest entries, a trimmed binding profile,
   deterministic build script, artifact receipt writer, and target-separated
   MTerrain object and `godot-cpp` variant directories are checked in. Plugin
@@ -56,14 +64,17 @@ The first implementation slice is now present:
 - A pinned, least-privilege source-contract workflow checks standalone
   governance, profile/manifest invariants, and Python/shell parsing on pull
   requests and default-branch pushes. It does not yet compile Web artifacts.
-- Core thread/future launch sites have explicit synchronous `web_core` branches.
-  The automatic terrain and physics loops default off in that profile because
-  their work is not yet a bounded state machine.
-- Runtime bridge API v1 reports capabilities and accepts one validated,
-  all-or-nothing, finite 67-by-67 R32F-metre height tile. It verifies every
-  affected region, duplicate shared-border destination, normal destination, and
-  height-source halo before mutation, expands normal regeneration by one sample,
-  and coalesces the dirty upload.
+- Core thread/future launch sites have explicit synchronous Web branches. The
+  automatic legacy terrain and physics loops default off because runtime API v2
+  owns bounded scheduling and collision residency.
+- Runtime bridge API v2 reports immutable capabilities and exposes bounded
+  queue/step/cancel/result/release operations. Work has stable keys, monotonic
+  revisions, priority, staged input, incremental preflight/write/normal phases,
+  per-region texture installation, sample- and region-budgeted rollback after
+  partial writes/uploads, deterministic LRU eviction, bounded managed-region
+  accounting without whole-grid scans, resident-region/estimated-byte ceilings,
+  and closed-cardinality timing/count metrics. The immediate API remains an
+  idle-queue compatibility wrapper over that scheduler.
 - `runtime_memory_only` is mandatory in `web_core`; it cannot be disabled, and
   explicit save, editor directory creation, destructive layer-file operations,
   and eviction-time legacy saves fail closed. Packed read-only resources may
@@ -71,40 +82,52 @@ The first implementation slice is now present:
 - The complete native debug/editor source profile compiles and links against the
   same Godot 4.7 API after replacing the removed `godot-cpp` VMap dependency with
   a small repository-owned sorted-vector map.
-- A native fixture and real dynamic-link Web export create a four-region,
-  memory-only terrain and apply one finite 67-by-67 height tile across both
-  shared region borders. They verify the duplicated border height, a 69-by-69
-  normal destination, rejection of a non-finite replacement without partial
-  mutation, and a visible raised heightfield.
-- Playwright Chromium, Firefox, and WebKit load the extension with WebGL2,
-  wasm32, no threads, the expected capability tuple, a nonblank directly
-  captured framebuffer, and no console, page, or request errors. Page and direct
-  framebuffer captures are retained separately because some headless WebKit
-  builds return a black compositor screenshot despite healthy WebGL pixels.
-  These are local automated browser checks, not physical-device support claims.
+- Native and real dynamic-link Web fixtures create a four-region memory-only
+  terrain; test cancellation rollback and revision coalescing; independently
+  apply adjacent 67-by-67 plane tiles with an exact shared height border and
+  continuous normals; raycast collision on both sides of the region/tile seam;
+  exercise bounded texture-array/splat material configuration; release all RIDs
+  and buffers; and perform a deterministic three-stop teleport under a two-tile,
+  two-region LRU ceiling.
+- Playwright Chromium, Firefox, and WebKit load both profiles with WebGL2,
+  wasm32, no threads, the expected API v2 capability tuple, a nonblank directly
+  captured framebuffer, and no console, page, or request errors. The extended
+  fixture additionally stages and releases bounded foliage, precomputed
+  navigation, baked paths, and mesh-only HLOD. Page and direct framebuffer
+  captures remain separate because some headless WebKit builds return a black
+  compositor screenshot despite healthy WebGL pixels. These are local automated
+  correctness checks, not headed-hardware or physical-device support claims.
 - Binaryen inspection records the artifact feature set and rejects thread or
-  shared-memory requirements. The locally built debug/release side modules are
-  817,244/790,279 raw bytes and 119,402/118,026 bytes at Brotli quality 11.
-  Final release evidence must be regenerated from the clean merged commit.
+  shared-memory requirements. In the final dirty implementation worktree, core
+  debug/release side modules are 937,216/904,906 raw bytes and
+  139,171/138,168 bytes at Brotli quality 11; extended side modules are
+  937,522/905,212 raw and 139,094/138,323 compressed. The extended profile also
+  packages a separately hashed 33,220-byte companion script. Receipts from the
+  clean merged commit remain the release-bearing provenance rather than these
+  development measurements.
 
 The remaining gaps are deliberately material:
 
-1. The initialized canary proves one cross-region tile, but not two independently
-   applied adjacent tiles, a visible equal-detail/LOD seam, collision traversal,
-   revision replacement, eviction, or reload.
-2. Terrain streaming, normals, uploads, and collision still need resumable,
-   cancellable, revision-safe work with measured per-frame budgets. Synchronous
-   fallback code is correctness scaffolding, not the final scheduler.
-3. Per-region upload-count instrumentation and separate timing for validation,
-   normal generation, texture apply, and collision remain open.
-4. Collision admission/readiness, deterministic eviction, memory ceilings, and
-   Compatibility material fallback still need implementation evidence.
-5. Web compile/export/browser CI, clean-clone reproduction, immutable artifacts,
+1. The bounded scheduler and LRU behavior have deterministic local proofs, but a
+   long traversal/teleport route still needs p50/p95/p99 frame time, worst-stall,
+   heap/RID, and steady-state recovery evidence on representative hardware.
+2. Exact per-phase timing remains incomplete: the runtime exposes total step and
+   count metrics, but validation, normal generation, texture apply, collision,
+   and eviction require separately recorded timings before budget tuning.
+3. Equal-detail tile/region seams are covered. One-level/max LOD transitions,
+   negative offsets, repeated promotion/demotion, deliberate border-mismatch
+   rejection, and destroy/recreate recovery remain open fixtures.
+4. Web compile/export/browser CI, clean-clone reproduction, immutable artifacts,
    and a published support matrix are not yet present; current CI is source-only.
-6. Headed Chrome, Firefox, and Safari plus physical Android- and iOS-class device
+5. Headed Chrome, Firefox, and Safari plus physical Android- and iOS-class device
    evidence remain mandatory before a browser release claim.
-7. Foliage, mesh HLOD, navigation, and paths remain native-only until each earns
-   an independently bounded `web_extended` implementation and gate.
+6. Foliage, mesh HLOD, navigation, and paths have bounded data-first projection
+   implementations plus small exported-resource and moving-revision fixtures.
+   Navigation now has an actual path-query proof and HLOD has transition
+   hysteresis. Each still needs representative content, longer moving-residency,
+   memory/frame-time, and physical-device evidence. Foliage collision, runtime
+   navigation baking, runtime mesh/curve deformation, and generated path
+   collision remain explicitly unsupported.
 
 These are engineering gaps, not evidence that bounded heightfield terrain cannot
 work on WebGL2.
@@ -137,16 +160,18 @@ instead of linking every subsystem:
 |---|---|---|
 | `full` | Native editor/runtime compatibility | Existing terrain, grass, navigation, octree, paths, HLOD, editor helpers where applicable |
 | `runtime` | Native exported runtime | Runtime capabilities without editor-only C++ |
-| `web_core` | First release-bearing browser runtime | Terrain height, visual LOD, tile batch API, existing collision/material primitives; bounded collision and rendered-material proof remain gated |
-| `web_extended` | Later opt-in browser runtime | Individually proven grass, mesh HLOD, navigation, and path projections |
+| `web_core` | First release-bearing browser runtime | Terrain height/visual LOD, API v2 scheduler/residency, bounded near-focus collision, and constrained Compatibility materials |
+| `web_extended` | Opt-in browser runtime | The same native core plus separately selectable data-first foliage, precomputed navigation, baked-path, and mesh-HLOD projections |
 
-The exact profile names may change once implemented, but the separation and
-fail-closed behavior are architectural requirements.
+The profile separation and fail-closed behavior are architectural requirements.
+Both Web profiles deliberately share one trimmed native binding closure; the
+extended companion is independently packaged and hashed so projects that need
+only terrain do not import it.
 
 ### 3.4 Scheduling
 
 Single-threaded Web work is expressed as explicit state machines. A work item has
-a stable key, input revision, priority, deadline-aware `step()` method,
+a stable key, input revision, priority, operation-budgeted `step()` method,
 cancellation, staged result, and main-thread `apply()` phase. A newer revision
 invalidates an older staged result before installation.
 
@@ -174,12 +199,27 @@ because MTerrain's internal height images are R32F. The API validates dimensions
 sample count, coordinates, finite values, configured grid bounds, and a maximum
 tile area before touching terrain state.
 
-The public contract is versioned separately from C++ class layout. Proposed
-runtime methods are:
+The public contract is versioned separately from C++ class layout. Runtime API
+v2 methods are:
 
 ```text
 get_runtime_bridge_api_version() -> int
 get_runtime_capabilities() -> Dictionary
+configure_runtime_limits(limits: Dictionary) -> Dictionary
+queue_height_tile(
+    work_key: String,
+    revision: int,
+    priority: int,
+    start_x: int,
+    start_y: int,
+    width: int,
+    height: int,
+    heights_m: PackedFloat32Array,
+    update_collision: bool
+) -> Dictionary
+step_runtime_work(max_sample_ops: int, max_region_ops: int) -> Dictionary
+cancel_runtime_work(work_key: String, revision: int) -> Dictionary
+take_runtime_work_result(work_key: String, revision: int) -> Dictionary
 apply_height_tile(
     start_x: int,
     start_y: int,
@@ -194,16 +234,29 @@ release_height_tile(
     width: int,
     height: int
 ) -> Dictionary
+release_runtime_tile(work_key: String, revision: int) -> Dictionary
+request_runtime_collision_focus(
+    focus_x: int,
+    focus_y: int,
+    radius_regions: int,
+    max_regions: int,
+    revision: int
+) -> Dictionary
+get_runtime_state() -> Dictionary
+configure_runtime_material(configuration: Dictionary) -> Dictionary
 ```
 
-`apply_height_tile()` is atomic from the caller's perspective:
+`queue_height_tile()` plus bounded `step_runtime_work()` is atomic at visible
+installation; `apply_height_tile()` drains that same state machine as a bounded-
+input compatibility call:
 
 1. Validate all parameters and calculate affected regions.
 2. Stage or copy the bounded input so caller mutation cannot race installation.
 3. Write samples through a bulk internal path that preserves shared border pixels.
 4. Regenerate normals for the tile plus a one-sample halo, clamped to the grid.
-5. Upload each dirty region texture at most once.
-6. Rebuild only requested, already-admitted collision regions.
+5. Upload affected dirty region images one region-budgeted operation at a time.
+6. Admit or refresh only requested collision regions under their independent
+   ceiling; a zero-region focus request releases collision residency.
 7. Return written sample count, affected pixel/region bounds, normal bounds,
    collision disposition, and an error code with no terrain payload.
 
@@ -255,17 +308,17 @@ An artifact is reusable only when the complete tuple and output digest match.
 
 ### 4.2 SCons behavior
 
-`gdextension/SConstruct` now owns the validated `full`, `runtime`, and
-`web_core` source profiles. The following requirements remain normative:
+`gdextension/SConstruct` now owns validated `full`, `runtime`, `web_core`, and
+`web_extended` source profiles. The following requirements remain normative:
 
 - Web build scripts select `platform=web` and `arch=wasm32` explicitly.
 - Web release and debug builds are produced explicitly with `threads=no`.
 - A threaded artifact, if added later, has a different suffix and receipt.
 - Editor-only source is selected by an editor capability, not merely because the
   target contains debug symbols.
-- Invalid combinations stop before plugin compilation. Current Web builds reject
-  every profile except `web_core`; `web_core` also rejects `threads=yes` and
-  double precision.
+- Invalid combinations stop before plugin compilation. Web builds reject every
+  profile except `web_core`/`web_extended`; both reject `threads=yes` and double
+  precision.
 - Output filenames retain the complete `godot-cpp` suffix.
 - Build and smoke scripts use deterministic staging without requiring users to
   rename their repository checkout manually.
@@ -289,10 +342,11 @@ stale side-module selection can otherwise produce WebAssembly link failures.
 
 ### 4.4 Binary-size control
 
-The first `web_core` artifact excludes editor, grass, navigation, path, HLOD,
-decal, and general object-octree sources unless the terrain core has an actual
-compile-time dependency. A binding-generation profile should trim unused Godot
-classes after the source profile is stable.
+The `web_core` and `web_extended` native artifacts exclude editor, grass,
+navigation, path, HLOD, decal, and general object-octree sources unless the
+terrain core has an actual compile-time dependency. They share the same trimmed
+binding-generation profile. Extended behavior is data-first and present only
+when packaging explicitly selects `web_extended`.
 
 Each milestone records raw and Brotli-compressed side-module bytes plus incremental
 page startup delay. A feature with no Web consumer does not enter the Web binary.
@@ -435,12 +489,31 @@ present in MTerrain. Web requirements:
 
 Grass collision is deferred until visual foliage meets frame and memory budgets.
 
+Implementation status: `MTerrainWebExtendedRuntime.queue_foliage()` validates a
+project-exported allowlisted mesh/material (or explicitly enabled in-memory test
+resource), finite transforms, mesh size, and an instance ceiling. It stages
+MultiMesh transforms under an instance-operation budget and retains the previous
+complete projection until atomic installation. Revision coalescing/cancellation,
+installed-key reservation, deterministic release, exported crossed-blade grass,
+and moving-revision fixtures are present. Representative art density tiers,
+long traversal, frame/memory budgets, physical-device shadows-off evidence, and
+all foliage collision work remain open.
+
 ### 6.2 Mesh HLOD
 
 Mesh-only HLOD may enter `web_extended` after terrain and foliage. Decal items,
 dynamic GI assumptions, arbitrary lights, and threaded resource pipelines are
 excluded initially. Packed mesh resources are prevalidated, loads are bounded,
 and LOD swaps retain the last complete level until the replacement is ready.
+
+Implementation status: the companion accepts one to four prevalidated mesh
+levels with strictly increasing finite distances and changes at most one level
+per apply operation. It excludes decals, lights, GI, threaded loads, and arbitrary
+resource paths. Index as well as vertex counts are bounded, installed ownership
+fails closed, and configurable distance hysteresis prevents threshold thrash.
+Exported near/far rock and moving-revision fixtures are present. Cross-fade,
+long camera traversal, representative memory/frame-time, and physical-device
+gates remain open.
 
 ### 6.3 Navigation
 
@@ -452,12 +525,28 @@ single-thread artifact.
 Acceptance includes region joins, agent radius/slope fixtures, moving residency,
 unload/reload, and a frame-time budget during navigation updates.
 
+Implementation status: the companion installs bounded, already baked
+`NavigationMesh` resources only. It validates finite vertices, polygon and total
+index counts, index bounds, resource scope, revision, and transform, and owns
+deterministic replacement/release. Runtime baking remains false in the capability
+contract. A real NavigationServer path-query fixture and exported navigation
+resource/moving-revision fixture are present; multi-region joins, agent
+radius/slope cases, long moving residency, and performance gates remain open.
+
 ### 6.4 Paths
 
 Authoring and mesh baking remain native-editor strengths. The first browser path
 capability loads or receives already validated curve/mesh data and realizes it
 without editor controls. Runtime curve deformation is considered only after it
 has resumable bounded work and seam/collision fixtures.
+
+Implementation status: the companion realizes only pre-baked bounded `Mesh`
+resources with a finite transform and optional allowlisted material. Authoring,
+Bezier deformation, road/river collision generation, and seam creation are not
+part of the browser runtime. An exported road strip, allowlisted material, and
+moving-revision fixture are present; representative authored roads,
+terrain-seam conformance, optional pre-baked collision, long moving residency,
+and performance gates remain open.
 
 ## 7. Testing strategy
 
@@ -548,37 +637,62 @@ framebuffer probes. Before treating this as a distributable milestone, reproduce
 it from the clean merged commit, add native release and clean-clone CI evidence,
 and publish immutable artifacts/receipts.
 
-### Milestone 2 — Batch height projection — first projection locally verified
+### Milestone 2 — Batch height projection — implementation locally verified 2026-08-24
 
 - Versioned batch API with strict bounds and finite-value validation.
 - Memory-fed/no-save runtime mode.
 - Adjacent 67-by-67 tiles render with shared borders and continuous normals.
 - Invalid input cannot partially mutate terrain.
-- One texture upload per affected region per committed update.
+- Each dirty height/normal image uploads once per affected region and committed
+  update.
 
-API v1, memory-only policy, bounded validation, shared-border and normal-source
+API v2, memory-only policy, bounded validation, shared-border and normal-source
 preflight, normal halo calculation, and coalesced dirty upload are implemented.
 Native and Chromium/Firefox/WebKit fixtures initialize four RAM-backed regions,
-apply one 67-by-67 tile across both shared borders, inspect a duplicated border
-sample, render the raised heightfield, and prove that a non-finite replacement
-does not partially mutate it. An independently applied adjacent-tile seam and
-normal proof, collision traversal, and upload-count instrumentation remain open;
-therefore the full milestone is not complete.
+apply two independent 67-by-67 tiles, inspect their exact shared height border
+and neighboring normals, render the raised heightfield, prove a non-finite
+replacement cannot partially mutate it, and bound upload counts to the two dirty
+runtime images per affected region. Deliberate border-mismatch rejection and the
+remaining LOD-transition fixtures stay in the release backlog.
 
-### Milestone 3 — Bounded single-thread residency
+### Milestone 3 — Bounded single-thread residency — implementation locally verified 2026-08-24
 
 - Terrain update work is resumable, cancellable, coalesced, and revision-safe.
 - Teleport and long traversal remain within configured time/memory ceilings.
 - Deterministic eviction releases RIDs and buffers.
 - No forced thread API remains in the `web_core` closure.
 
-### Milestone 4 — Collision and material release candidate
+The API v2 state machine is resumable by sample/region budgets, stages caller
+data, exposes phase progress, rolls back cancellation after partial height writes,
+coalesces newer revisions, marks regenerated normals dirty, and restores texture
+state under the region budget if cancellation follows a partial upload.
+Stable-key LRU eviction detaches rendering materials, removes collision, unloads
+images/buffers, and returns a three-stop teleport fixture to its two-region then
+zero-region ceilings. Native core/extended and automated Chromium/Firefox/WebKit
+checks are green. The milestone is not release-complete until a longer traversal
+passes representative headed/mobile frame, stall, RID, and heap budgets.
+
+### Milestone 4 — Collision/material candidate — implementation locally verified; release gate open
 
 - Near-focus collision has readiness and exact visual alignment evidence.
 - Seam traversal passes across LOD and tile boundaries.
 - Minimal and texture-enhanced Compatibility materials pass missing-texture and
   unshaded readability tests.
 - Chrome, Firefox, Safari, Android-class, and iOS-class evidence is green.
+
+Near-focus collision has independent region/revision ceilings, automatic bounded
+admission for compatibility `update_collision=true`, explicit focus movement,
+zero-region release, readiness state, generation accounting, and one-region-per-
+step apply. Rapid focus replacement cannot strand an old body, and edits refresh
+already-active collision even without requesting new admission. Native and
+browser fixtures raycast on both sides of the independently
+applied tile/region seam and compare hits with the visual heightfield. The
+Compatibility shader supplies height/slope semantic albedo without textures and
+optionally blends at most four samples from a maximum 16-layer, 2048-pixel array;
+both missing-texture and two-layer fixtures are green. Headless Chromium, Firefox,
+and WebKit satisfy local correctness. Equal-detail LOD rendering, headed hardware
+performance, Safari proper, and physical Android/iOS evidence keep the release
+gate open.
 
 ### Milestone 5 — First Web runtime release
 
@@ -588,11 +702,21 @@ therefore the full milestone is not complete.
 - Rollback to the previous runtime artifact is tested.
 - Native editor and runtime regression suites are green.
 
-### Milestone 6+ — Extended capabilities
+### Milestone 6+ — Extended capabilities — first projections locally verified 2026-08-24
 
-Foliage, mesh HLOD, navigation, and paths each require their own implementation,
-browser correctness, performance, memory, eviction, and native-regression gate.
-They do not share one blanket “feature parity” approval.
+`web_extended` packages the same bounded terrain core plus a separately hashed
+companion. Foliage, mesh HLOD, navigation, and paths each have revision-safe,
+cancellable, bounded data-first projection/replacement/release fixtures. The
+suite now includes exported grass/road/rock/navigation resources, actual
+NavigationServer pathfinding, strict mesh/navigation index ceilings, fail-closed
+installed ownership, moving revisions, and HLOD hysteresis. Fresh local
+Chromium 149, Firefox 151, and Playwright WebKit 26.5 runs load the same extended
+side-module hash, execute those exported-resource fixtures, return a real
+navigation route, perform an HLOD swap, capture a nonblank 47-color framebuffer,
+and report no console, page, or request errors. Each capability still requires
+its own representative-content, long-traversal performance/memory,
+physical-device, and native-regression gate; they do not share one blanket
+“feature parity” approval. Clean-merge reproduction remains part of Milestone 5.
 
 ## 9. Major decision checkpoints
 

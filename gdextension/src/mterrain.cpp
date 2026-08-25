@@ -15,6 +15,7 @@
 #include "navmesh/mnavigation_region_3d.h"
 #endif
 #include "mbrush_layers.h"
+#include "mruntime_scheduler.h"
 #ifndef MTERRAIN_CORE_ONLY
 #include "mtool.h"
 #endif
@@ -52,6 +53,31 @@ void MTerrain::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("apply_height_tile", "start_x", "start_y", "width", "height", "heights_m", "update_collision"),
         &MTerrain::apply_height_tile
+    );
+    ClassDB::bind_method(D_METHOD("configure_runtime_limits", "limits"), &MTerrain::configure_runtime_limits);
+    ClassDB::bind_method(
+        D_METHOD("queue_height_tile", "work_key", "revision", "priority", "start_x", "start_y", "width", "height", "heights_m", "update_collision"),
+        &MTerrain::queue_height_tile
+    );
+    ClassDB::bind_method(D_METHOD("step_runtime_work", "max_sample_ops", "max_region_ops"), &MTerrain::step_runtime_work);
+    ClassDB::bind_method(D_METHOD("cancel_runtime_work", "work_key", "revision"), &MTerrain::cancel_runtime_work);
+    ClassDB::bind_method(D_METHOD("release_runtime_tile", "work_key", "revision"), &MTerrain::release_runtime_tile);
+    ClassDB::bind_method(
+        D_METHOD("release_height_tile", "start_x", "start_y", "width", "height"),
+        &MTerrain::release_height_tile
+    );
+    ClassDB::bind_method(
+        D_METHOD("request_runtime_collision_focus", "focus_x", "focus_y", "radius_regions", "max_regions", "revision"),
+        &MTerrain::request_runtime_collision_focus
+    );
+    ClassDB::bind_method(D_METHOD("get_runtime_state"), &MTerrain::get_runtime_state);
+    ClassDB::bind_method(
+        D_METHOD("take_runtime_work_result", "work_key", "revision"),
+        &MTerrain::take_runtime_work_result
+    );
+    ClassDB::bind_method(
+        D_METHOD("configure_runtime_material", "configuration"),
+        &MTerrain::configure_runtime_material
     );
     ClassDB::bind_method(D_METHOD("set_runtime_memory_only", "enabled"), &MTerrain::set_runtime_memory_only);
     ClassDB::bind_method(D_METHOD("get_runtime_memory_only"), &MTerrain::get_runtime_memory_only);
@@ -262,6 +288,12 @@ MTerrain::MTerrain() {
     connect("tree_entered", Callable(this, "_update_visibility"));
     recalculate_terrain_config(true);
     grid = memnew(MGrid);
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    grid->region_limit = 0;
+    grid->regions_processing_physics = 0;
+    max_range = 128;
+#endif
+    runtime_scheduler = memnew(MRuntimeScheduler(grid));
     update_chunks_timer = memnew(Timer);
     update_chunks_timer->set_wait_time(chunks_update_interval);
     update_chunks_timer->set_one_shot(true);
@@ -282,6 +314,11 @@ MTerrain::MTerrain() {
 }
 
 MTerrain::~MTerrain() {
+    if(runtime_scheduler != nullptr){
+        runtime_scheduler->reset();
+        memdelete(runtime_scheduler);
+        runtime_scheduler = nullptr;
+    }
     remove_grid(true);
     memdelete(grid);
     for(int i=0; i < all_terrain_nodes.size(); i++){
@@ -306,6 +343,9 @@ void MTerrain::create_grid(){
     ERR_FAIL_COND(grid->is_created());
     ERR_FAIL_COND_EDMSG(terrain_size.x%region_size!=0,"Terrain size X component is not divisible by region size");
     ERR_FAIL_COND_EDMSG(terrain_size.y%region_size!=0,"Terrain size Y component is not divisible by region size");
+    if(runtime_scheduler != nullptr){
+        runtime_scheduler->reset();
+    }
     if(Engine::get_singleton()->is_editor_hint() && !runtime_memory_only){
         if(dataDir.is_empty() || dataDir == String("res://") || !dataDir.is_absolute_path()){
             dataDir = "res://mterrain_data";
@@ -323,6 +363,14 @@ void MTerrain::create_grid(){
     }
     grid->update_renderer_info();
     grid->_chunks.create_chunks(size_list[min_size_index],size_list[max_size_index],h_scale_list[min_h_scale_index],h_scale_list[max_h_scale_index],size_info);
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    const int32_t bounded_region_pixel_size =
+        (int32_t)(region_size*grid->_chunks.base_size_meter/grid->_chunks.h_scale)+1;
+    ERR_FAIL_COND_EDMSG(
+        bounded_region_pixel_size > 129,
+        "Bounded Web runtime regions cannot exceed 129 by 129 height samples"
+    );
+#endif
     grid->set_scenario(get_world_3d()->get_scenario());
     grid->space = get_world_3d()->get_space();
     grid->instance_id = get_instance_id();
@@ -370,7 +418,9 @@ void MTerrain::create_grid(){
     grid->clear_region_bounds();
     grid->update_chunks(cam_pos);
     grid->apply_update_chunks();
+#ifndef MTERRAIN_BOUNDED_RUNTIME
     grid->update_physics(cam_pos);
+#endif
     last_update_pos = cam_pos;
     // Grass Part
     terrain_ready_signal();
@@ -408,6 +458,9 @@ void MTerrain::create_grid(){
 }
 
 void MTerrain::remove_grid(bool is_destruction){
+    if(runtime_scheduler != nullptr){
+        runtime_scheduler->reset();
+    }
     if(!is_destruction){
         if(update_chunks_timer!=nullptr && UtilityFunctions::is_instance_id_valid(update_chunks_timer->get_instance_id())){
             update_chunks_timer->stop();
@@ -713,14 +766,16 @@ void MTerrain::set_height_by_pixel(const uint32_t x,const uint32_t y,const real_
 }
 
 int MTerrain::get_runtime_bridge_api_version() const {
-    return 1;
+    return 2;
 }
 
 Dictionary MTerrain::get_runtime_capabilities() const {
     Dictionary capabilities;
     capabilities["api_version"] = get_runtime_bridge_api_version();
     capabilities["api_stability"] = "experimental";
-#ifdef MTERRAIN_PROFILE_WEB_CORE
+#ifdef MTERRAIN_PROFILE_WEB_EXTENDED
+    capabilities["build_profile"] = "web_extended";
+#elif defined(MTERRAIN_PROFILE_WEB_CORE)
     capabilities["build_profile"] = "web_core";
 #elif defined(MTERRAIN_PROFILE_RUNTIME)
     capabilities["build_profile"] = "runtime";
@@ -744,14 +799,54 @@ Dictionary MTerrain::get_runtime_capabilities() const {
     capabilities["heightfield_collision"] = true;
     capabilities["compatibility_materials"] = true;
     capabilities["height_tile_apply"] = true;
-    capabilities["height_tile_release"] = false;
-    capabilities["bounded_update_scheduler"] = false;
-    capabilities["bounded_collision"] = false;
-#ifdef MTERRAIN_CORE_ONLY
+    capabilities["height_tile_queue"] = true;
+    capabilities["height_tile_release"] = true;
+    capabilities["bounded_update_scheduler"] = true;
+    capabilities["bounded_collision"] = true;
+    capabilities["collision_focus"] = true;
+    capabilities["runtime_state_snapshot"] = true;
+    capabilities["runtime_material_configuration"] = true;
+    Dictionary scheduler_limits;
+    scheduler_limits["minimum_sample_ops_per_step"] = 128;
+    scheduler_limits["maximum_sample_ops_per_step"] = 16384;
+    scheduler_limits["maximum_region_ops_per_step"] = 16;
+    scheduler_limits["maximum_regions_per_tile"] = 16;
+    scheduler_limits["maximum_collision_focus_radius_regions"] = 4;
+    capabilities["scheduler_limits"] = scheduler_limits;
+    if(runtime_scheduler != nullptr){
+        capabilities["default_runtime_limits"] =
+            runtime_scheduler->snapshot().get("limits", Dictionary());
+    }
+    Dictionary material_limits;
+    material_limits["maximum_texture_array_layers"] = 16;
+    material_limits["maximum_fragment_samples"] = 4;
+    material_limits["maximum_texture_dimension"] = 2048;
+    material_limits["missing_texture_readable"] = true;
+    capabilities["compatibility_material_limits"] = material_limits;
+#ifdef MTERRAIN_PROFILE_WEB_EXTENDED
+    capabilities["foliage"] = true;
+    capabilities["navigation"] = true;
+    capabilities["paths"] = true;
+    capabilities["mesh_hlod"] = true;
+    capabilities["extended_runtime_class"] = "MTerrainWebExtendedRuntime";
+    capabilities["extended_runtime_api_version"] = 1;
+    capabilities["foliage_collision"] = false;
+    capabilities["runtime_navigation_baking"] = false;
+    capabilities["runtime_curve_deformation"] = false;
+    capabilities["path_collision"] = false;
+    capabilities["runtime_mesh_generation"] = false;
+    capabilities["hlod_hysteresis"] = true;
+#elif defined(MTERRAIN_CORE_ONLY)
     capabilities["foliage"] = false;
     capabilities["navigation"] = false;
     capabilities["paths"] = false;
     capabilities["mesh_hlod"] = false;
+    capabilities["foliage_collision"] = false;
+    capabilities["runtime_navigation_baking"] = false;
+    capabilities["runtime_curve_deformation"] = false;
+    capabilities["path_collision"] = false;
+    capabilities["runtime_mesh_generation"] = false;
+    capabilities["hlod_hysteresis"] = false;
 #else
     capabilities["foliage"] = true;
     capabilities["navigation"] = true;
@@ -769,91 +864,22 @@ Dictionary MTerrain::apply_height_tile(
     const PackedFloat32Array& heights_m,
     bool update_collision
 ) {
-    Dictionary result;
-    result["ok"] = false;
-    result["api_version"] = get_runtime_bridge_api_version();
-
-    auto fail = [&result](const String& code, const String& message) {
-        result["code"] = code;
-        result["message"] = message;
-        return result;
-    };
-
-    if(!grid->is_created()){
-        return fail("grid_not_created", "Create the terrain grid before applying a height tile");
+    if(runtime_scheduler == nullptr){
+        Dictionary unavailable;
+        unavailable["ok"] = false;
+        unavailable["api_version"] = get_runtime_bridge_api_version();
+        unavailable["code"] = "runtime_scheduler_unavailable";
+        unavailable["message"] = "The runtime scheduler is unavailable";
+        return unavailable;
     }
-    if(start_x < 0 || start_y < 0){
-        return fail("negative_origin", "Height tile coordinates must be non-negative");
-    }
-    if(width <= 0 || height <= 0){
-        return fail("invalid_dimensions", "Height tile dimensions must be positive");
-    }
-    if(width > 67 || height > 67){
-        return fail("tile_too_large", "Height tiles are limited to 67 by 67 samples");
-    }
-    const int64_t sample_count = (int64_t)width * (int64_t)height;
-    if(sample_count > 4489 || heights_m.size() != sample_count){
-        return fail("sample_count_mismatch", "Height sample count does not match the bounded tile dimensions");
-    }
-    const int64_t end_x_exclusive = (int64_t)start_x + (int64_t)width;
-    const int64_t end_y_exclusive = (int64_t)start_y + (int64_t)height;
-    if(end_x_exclusive > get_pixel_width() || end_y_exclusive > get_pixel_height()){
-        return fail("tile_out_of_bounds", "Height tile extends beyond the configured terrain grid");
-    }
-
-    PackedFloat32Array staged_heights;
-    staged_heights.resize((int32_t)sample_count);
-    for(int32_t index=0; index < sample_count; index++){
-        const float value = heights_m[index];
-        if(!std::isfinite(value)){
-            return fail("non_finite_height", "Height tiles cannot contain NaN or infinity");
-        }
-        staged_heights.set(index,value);
-    }
-    for(int32_t local_y=0; local_y < height; local_y++){
-        for(int32_t local_x=0; local_x < width; local_x++){
-            if(!grid->can_set_height_by_pixel(start_x+local_x,start_y+local_y)){
-                return fail("tile_not_resident", "Every affected region and shared border must be resident before apply");
-            }
-        }
-    }
-
-    const uint32_t normal_left = (uint32_t)(start_x > 0 ? start_x-1 : 0);
-    const uint32_t normal_top = (uint32_t)(start_y > 0 ? start_y-1 : 0);
-    const uint32_t normal_right = (uint32_t)MIN(end_x_exclusive,get_pixel_width()-1);
-    const uint32_t normal_bottom = (uint32_t)MIN(end_y_exclusive,get_pixel_height()-1);
-    if(!grid->can_update_normals(normal_left,normal_right,normal_top,normal_bottom)){
-        return fail("normal_halo_not_resident", "Every normal destination and height source in the expanded halo must be resident before apply");
-    }
-
-    for(int32_t local_y=0; local_y < height; local_y++){
-        const int32_t row_offset = local_y*width;
-        for(int32_t local_x=0; local_x < width; local_x++){
-            grid->set_height_by_pixel(
-                start_x+local_x,
-                start_y+local_y,
-                staged_heights[row_offset+local_x]
-            );
-        }
-    }
-
-    grid->update_normals(normal_left,normal_right,normal_top,normal_bottom);
-    grid->update_all_dirty_image_texture(update_collision);
-
-    result["ok"] = true;
-    result["code"] = "ok";
-    result["written_samples"] = sample_count;
-    result["pixel_origin"] = Vector2i(start_x,start_y);
-    result["pixel_size"] = Vector2i(width,height);
-    result["normal_origin"] = Vector2i(normal_left,normal_top);
-    result["normal_size"] = Vector2i(
-        normal_right-normal_left+1,
-        normal_bottom-normal_top+1
+    return runtime_scheduler->apply_height_tile_immediate(
+        start_x,
+        start_y,
+        width,
+        height,
+        heights_m,
+        update_collision
     );
-    result["collision_disposition"] = update_collision
-        ? "refreshed_existing_shapes"
-        : "not_requested";
-    return result;
 }
 
 void MTerrain::set_runtime_memory_only(bool input) {

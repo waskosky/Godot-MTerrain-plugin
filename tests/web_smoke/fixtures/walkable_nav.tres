@@ -1,0 +1,5 @@
+[gd_resource type="NavigationMesh" format=3]
+
+[resource]
+vertices = PackedVector3Array(-8, 0, -8, 8, 0, -8, 8, 0, 8, -8, 0, 8)
+polygons = [PackedInt32Array(0, 3, 2, 1)]

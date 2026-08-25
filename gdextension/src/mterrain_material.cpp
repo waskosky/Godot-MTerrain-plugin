@@ -493,6 +493,12 @@ void MTerrainMaterial::set_uniform(RID mat,StringName uname,Variant value){
 }
 
 void MTerrainMaterial::set_default_uniform(StringName uname,Variant value){
+    Dictionary defaults;
+    if(uniforms.has(-1)){
+        defaults = uniforms[-1];
+    }
+    defaults[uname] = value;
+    uniforms[-1] = defaults;
     for(HashMap<int,RID>::Iterator it=materials.begin();it!=materials.end();++it){
         if(uniforms.has(it->key)){
             Dictionary ureg = uniforms[it->key];

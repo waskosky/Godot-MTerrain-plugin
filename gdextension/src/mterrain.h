@@ -33,6 +33,7 @@ using namespace godot;
 #ifndef MTERRAIN_CORE_ONLY
 class MNavigationRegion3D;
 #endif
+class MRuntimeScheduler;
 
 
 class MTerrain : public  Node3D {
@@ -83,6 +84,7 @@ class MTerrain : public  Node3D {
     String dataDir;
     String layersDataDir;
     bool runtime_memory_only = false;
+    MRuntimeScheduler* runtime_scheduler = nullptr;
     // Top Level for heightmap layers
     // Heightmap layers index here are not the active layer id, but in grid they are
     // Also we record the active layer by it's name here not its id
@@ -163,6 +165,37 @@ class MTerrain : public  Node3D {
         const PackedFloat32Array& heights_m,
         bool update_collision
     );
+    Dictionary configure_runtime_limits(const Dictionary& limits);
+    Dictionary queue_height_tile(
+        const String& work_key,
+        int64_t revision,
+        int32_t priority,
+        int32_t start_x,
+        int32_t start_y,
+        int32_t width,
+        int32_t height,
+        const PackedFloat32Array& heights_m,
+        bool update_collision
+    );
+    Dictionary step_runtime_work(int32_t max_sample_ops, int32_t max_region_ops);
+    Dictionary cancel_runtime_work(const String& work_key, int64_t revision);
+    Dictionary release_runtime_tile(const String& work_key, int64_t revision);
+    Dictionary release_height_tile(
+        int32_t start_x,
+        int32_t start_y,
+        int32_t width,
+        int32_t height
+    );
+    Dictionary request_runtime_collision_focus(
+        int32_t focus_x,
+        int32_t focus_y,
+        int32_t radius_regions,
+        int32_t max_regions,
+        int64_t revision
+    );
+    Dictionary get_runtime_state() const;
+    Dictionary take_runtime_work_result(const String& work_key, int64_t revision);
+    Dictionary configure_runtime_material(const Dictionary& configuration);
     void set_runtime_memory_only(bool input);
     bool get_runtime_memory_only() const;
 
