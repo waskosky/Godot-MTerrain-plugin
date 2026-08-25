@@ -22,6 +22,25 @@ Call `MTerrain.get_runtime_capabilities()` before constructing a pipeline. A
 caller must reject an unsuitable `api_version`, profile, format, limit, or
 capability explicitly. Missing capabilities never silently succeed.
 
+## Machine-readable contract
+
+`runtime/web_runtime_contract.json` is the release-facing capability authority.
+It records the exact Web target tuple, profile inheritance, public methods, API
+and state versions, height formats, hard limits, required capabilities, and
+explicitly unsupported behavior. Both profile archives contain the same bytes,
+the release also publishes those bytes as a standalone asset, and the release
+index binds their digest and size.
+
+A consumer should verify the release index and contract digest before selecting
+a profile, then compare the live capability dictionary with the selected
+contract entry. The prose in this document explains semantics but does not
+override that machine-readable profile boundary. Maintainers can check source
+and contract drift with:
+
+```sh
+python3 scripts/verify_web_runtime_contract.py
+```
+
 ## Terrain data contract
 
 - Coordinates are integer height-sample coordinates in the configured terrain

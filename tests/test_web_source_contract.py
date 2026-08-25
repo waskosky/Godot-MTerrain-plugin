@@ -4,6 +4,7 @@ import importlib.util
 import json
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WebSourceContractTests(unittest.TestCase):
+    def test_machine_readable_runtime_contract_matches_implementations(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "verify_web_runtime_contract.py")],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertIn("MTERRAIN_WEB_RUNTIME_CONTRACT_OK", completed.stdout)
+        contract = json.loads(
+            (ROOT / "runtime" / "web_runtime_contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(contract["schema"], "mterrain-web-runtime-contract-v1")
+        self.assertEqual(contract["contract_version"], 1)
+        self.assertEqual(set(contract["profiles"]), {"web_core", "web_extended"})
+        self.assertEqual(
+            contract["profiles"]["web_extended"]["inherits"], "web_core"
+        )
+
     def test_web_governance_docs_remain_standalone(self) -> None:
         for relative in (
             "AGENTS.md",
@@ -387,6 +411,14 @@ class WebSourceContractTests(unittest.TestCase):
             self.assertIn(expected, workflow)
         self.assertIn("permissions:\n      contents: write", workflow)
         self.assertNotRegex(workflow, r"uses: [^\n]+@(?![0-9a-f]{40})")
+
+        packager = (
+            ROOT / "scripts" / "package_web_release.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('RUNTIME_CONTRACT_RELATIVE = "runtime/web_runtime_contract.json"', packager)
+        self.assertIn('"mterrain-web-runtime-contract-v1"', packager)
+        self.assertIn('"web-runtime-v0.1.0-rc.1"', packager)
+        self.assertIn("runtime_contract_output", packager)
 
     def test_release_archives_are_normalized_and_deterministic(self) -> None:
         package_path = ROOT / "scripts" / "package_web_release.py"

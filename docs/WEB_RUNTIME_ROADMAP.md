@@ -3,7 +3,9 @@
 - Status: active delivery; Milestone 3/4 implementations and the first bounded
   `web_extended` projections locally verified on 2026-08-24; clean-clone Web
   builds, native regressions, split distribution bundles, and immutable
-  prerelease automation added for `web-runtime-v0.1.0-rc.1` on 2026-08-25;
+  prerelease automation added for `web-runtime-v0.1.0-rc.1` and a
+  machine-readable, release-bound runtime contract prepared for
+  `web-runtime-v0.1.0-rc.2` on 2026-08-25;
   representative hardware and physical-mobile stable-release gates remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
@@ -79,6 +81,13 @@ The implemented local release-candidate slice now includes:
   and bundle digests plus `SHA256SUMS`. This establishes a controlled clean-clone
   procedure without claiming cross-kernel byte identity that has not been
   separately measured.
+- `runtime/web_runtime_contract.json` is the machine-readable release boundary
+  for target, profile inheritance, public methods, API/state versions, formats,
+  limits, required capabilities, and unsupported behavior. A repository-local
+  verifier rejects drift against the C++ bindings, capability dictionary,
+  scheduler/material bounds, toolchains, and extended companion. Both bundles
+  and a standalone release asset carry identical contract bytes bound by the
+  release index and `SHA256SUMS`.
 - Core thread/future launch sites have explicit synchronous Web branches. The
   automatic legacy terrain and physics loops default off because runtime API v2
   owns bounded scheduling and collision residency.
@@ -713,20 +722,23 @@ and WebKit satisfy local correctness. Equal-detail LOD rendering, headed hardwar
 performance, Safari proper, and physical Android/iOS evidence keep the release
 gate open.
 
-### Milestone 5 — First Web runtime release — prerelease distribution delivered; stable gate open
+### Milestone 5 — Web runtime prerelease distribution — second candidate prepared; stable gate open
 
 - `web-runtime-v0.1.0-rc.1` is the versioned review baseline; the tag workflow
   publishes core/extended bundles and receipts only after clean Web and native
   jobs pass, with repository release immutability and GitHub attestation.
+- `web-runtime-v0.1.0-rc.2` adds the checked machine-readable runtime contract as
+  a standalone/index-bound asset and inside both complete profile archives.
 - `WEB_RELEASE_PROCESS.md` is the clean-clone build, verification, integration,
   promotion, and rollback contract.
 - `WEB_SUPPORT_MATRIX.md` publishes the exact capability/browser evidence and
   keeps headed Safari, Android, iOS, and representative performance rows open.
 - Full native debug/release, full-profile registration, native core/extended,
   and extended companion regressions are mandatory CI jobs.
-- This first candidate establishes the prior-artifact baseline. A true
-  candidate-to-previous rollback is necessarily deferred until a second
-  immutable version exists and remains required before a stable release.
+- The immutable first candidate and second candidate establish a real artifact
+  rollback pair. Stable release still requires an actual whole-profile
+  candidate-to-prior project restoration and repeated runtime smokes on
+  representative hardware; file-level substitution is never accepted.
 
 ### Milestone 6+ — Extended capabilities — first projections locally verified 2026-08-24
 

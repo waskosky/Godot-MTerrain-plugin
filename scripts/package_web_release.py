@@ -17,6 +17,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "build" / "distribution"
+RUNTIME_CONTRACT_RELATIVE = "runtime/web_runtime_contract.json"
 VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 PROFILES = {
     "web_core": {
@@ -38,6 +39,7 @@ COMMON_FILES = (
     "docs/WEB_RUNTIME_ROADMAP.md",
     "docs/WEB_RELEASE_PROCESS.md",
     "docs/WEB_SUPPORT_MATRIX.md",
+    RUNTIME_CONTRACT_RELATIVE,
     "start_material_opengl.res",
     "start_opengl.gdshader",
     "start_opengl.gdshader.uid",
@@ -198,6 +200,20 @@ def package(version: str, output: Path) -> None:
     support_matrix = require_file(
         ROOT / "docs" / "WEB_SUPPORT_MATRIX.md", "Web support matrix"
     )
+    runtime_contract_path = require_file(
+        ROOT / RUNTIME_CONTRACT_RELATIVE, "Web runtime contract"
+    )
+    runtime_contract = read_json(runtime_contract_path)
+    if runtime_contract.get("schema") != "mterrain-web-runtime-contract-v1":
+        raise SystemExit("Unexpected Web runtime contract schema")
+    if runtime_contract.get("contract_version") != 1:
+        raise SystemExit("Unexpected Web runtime contract version")
+    contract_profiles = runtime_contract.get("profiles", {})
+    if set(contract_profiles) != set(PROFILES):
+        raise SystemExit("Web runtime contract must describe both release profiles")
+    runtime_contract_name = f"Godot-MTerrain-{version}-runtime-contract.json"
+    runtime_contract_output = output / runtime_contract_name
+    runtime_contract_output.write_bytes(runtime_contract_path.read_bytes())
     index: dict[str, Any] = {
         "schema": "mterrain-web-release-index-v1",
         "version": version,
@@ -223,6 +239,14 @@ def package(version: str, output: Path) -> None:
             "path": "docs/WEB_SUPPORT_MATRIX.md",
             "sha256": sha256_file(support_matrix),
         },
+        "runtime_contract": {
+            "name": runtime_contract_name,
+            "bundle_path": RUNTIME_CONTRACT_RELATIVE,
+            "schema": runtime_contract["schema"],
+            "contract_version": runtime_contract["contract_version"],
+            "sha256": sha256_file(runtime_contract_output),
+            "size": runtime_contract_output.stat().st_size,
+        },
         "profiles": {},
     }
 
@@ -234,11 +258,9 @@ def package(version: str, output: Path) -> None:
         )
         profile_index: dict[str, Any] = {
             "archive_root": archive_root,
-            "capability_contract": (
-                "runtime-api-v2"
-                if profile == "web_core"
-                else "runtime-api-v2+extended-api-v1"
-            ),
+            "capability_contract": contract_profiles[profile][
+                "capability_contract"
+            ],
             "artifacts": {},
         }
         for target in TARGETS:
@@ -282,7 +304,9 @@ def package(version: str, output: Path) -> None:
             files[f"{archive_root}/{companion_path}"] = companion.read_bytes()
             profile_index["runtime_companion"] = {
                 "path": companion_path,
-                "api_version": 1,
+                "api_version": contract_profiles[profile]["companion"][
+                    "api_version"
+                ],
                 "sha256": sha256_file(companion),
                 "size": companion.stat().st_size,
             }
@@ -305,7 +329,7 @@ def package(version: str, output: Path) -> None:
     checksummed = [
         output / profile["bundle"]["name"]
         for profile in index["profiles"].values()
-    ] + [index_path]
+    ] + [index_path, runtime_contract_output]
     (output / "SHA256SUMS").write_text(
         "".join(
             f"{sha256_file(path)}  {path.name}\n"
@@ -374,6 +398,39 @@ def verify(output: Path) -> None:
     if expected_checksums.get(index_path.name) != sha256_file(index_path):
         raise SystemExit("Release-index checksum mismatch")
 
+    runtime_contract_index = index.get("runtime_contract")
+    runtime_contract_data: bytes | None = None
+    runtime_contract: dict[str, Any] | None = None
+    if runtime_contract_index is not None:
+        if not isinstance(runtime_contract_index, dict):
+            raise SystemExit("Release-index runtime contract must be an object")
+        runtime_contract_path = require_file(
+            output / str(runtime_contract_index.get("name", "")),
+            "runtime contract",
+        )
+        runtime_contract_data = runtime_contract_path.read_bytes()
+        if runtime_contract_index.get("sha256") != sha256_bytes(runtime_contract_data):
+            raise SystemExit("Runtime-contract digest mismatch")
+        if runtime_contract_index.get("size") != len(runtime_contract_data):
+            raise SystemExit("Runtime-contract size mismatch")
+        if expected_checksums.get(runtime_contract_path.name) != sha256_bytes(
+            runtime_contract_data
+        ):
+            raise SystemExit("Runtime-contract SHA256SUMS mismatch")
+        runtime_contract = json.loads(runtime_contract_data.decode("utf-8"))
+        if runtime_contract.get("schema") != "mterrain-web-runtime-contract-v1":
+            raise SystemExit("Unexpected runtime-contract schema")
+        if runtime_contract.get("contract_version") != 1:
+            raise SystemExit("Unexpected runtime-contract version")
+        if runtime_contract_index.get("schema") != runtime_contract["schema"]:
+            raise SystemExit("Release-index runtime-contract schema mismatch")
+        if runtime_contract_index.get("contract_version") != runtime_contract[
+            "contract_version"
+        ]:
+            raise SystemExit("Release-index runtime-contract version mismatch")
+    elif index.get("version") != "web-runtime-v0.1.0-rc.1":
+        raise SystemExit("Only the immutable rc.1 baseline may omit a runtime contract")
+
     profiles = index.get("profiles", {})
     if set(profiles) != set(PROFILES):
         raise SystemExit("Release index must contain exactly core and extended profiles")
@@ -397,8 +454,24 @@ def verify(output: Path) -> None:
             f"{archive_root}/docs/WEB_RUNTIME_API.md",
             f"{archive_root}/docs/WEB_SUPPORT_MATRIX.md",
         }
+        if runtime_contract_data is not None:
+            bundle_contract_path = runtime_contract_index.get("bundle_path")
+            if bundle_contract_path != RUNTIME_CONTRACT_RELATIVE:
+                raise SystemExit("Unexpected runtime-contract bundle path")
+            required_paths.add(f"{archive_root}/{bundle_contract_path}")
         if not required_paths.issubset(members):
             raise SystemExit(f"Bundle {profile} is missing common runtime files")
+        if runtime_contract_data is not None:
+            bundled_contract = members[
+                f"{archive_root}/{runtime_contract_index['bundle_path']}"
+            ]
+            if bundled_contract != runtime_contract_data:
+                raise SystemExit(f"Bundle {profile} runtime contract differs")
+            expected_capability_contract = runtime_contract["profiles"][profile][
+                "capability_contract"
+            ]
+            if profile_index.get("capability_contract") != expected_capability_contract:
+                raise SystemExit(f"Capability contract mismatch for {profile}")
         for target, artifact_index in profile_index.get("artifacts", {}).items():
             if target not in TARGETS:
                 raise SystemExit(f"Unexpected target {target} in {profile}")
@@ -426,11 +499,17 @@ def verify(output: Path) -> None:
                 raise SystemExit("Extended bundle omitted its runtime companion")
             if companion.get("sha256") != sha256_bytes(members[companion_path]):
                 raise SystemExit("Extended companion digest mismatch")
+            if runtime_contract is not None and companion.get("api_version") != (
+                runtime_contract["profiles"][profile]["companion"]["api_version"]
+            ):
+                raise SystemExit("Extended companion API version mismatch")
         elif "runtime_companion" in profile_index:
             raise SystemExit("Core bundle must not advertise the extended companion")
     expected_names = {index_path.name} | {
         value["bundle"]["name"] for value in profiles.values()
     }
+    if runtime_contract_index is not None:
+        expected_names.add(runtime_contract_index["name"])
     if set(expected_checksums) != expected_names:
         raise SystemExit("SHA256SUMS contains an unexpected or missing asset")
     print(f"MTERRAIN_WEB_RELEASE_VERIFY_OK {index.get('version')}")

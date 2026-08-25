@@ -14,8 +14,9 @@ texture-optional materials. The opt-in
 baked-path, and hysteretic mesh-HLOD projections without linking the native
 authoring subsystems. Its fixtures include exported grass/road/rock/navigation
 resources, moving revisions, and a real navigation path query. The
-`web-runtime-v0.1.0-rc.1` review candidate adds clean-clone debug/release builds,
-native regressions, immutable profile bundles and receipts, and a published
+`web-runtime-v0.1.0-rc.2` review candidate adds clean-clone debug/release builds,
+native regressions, immutable profile bundles and receipts, and an index-bound
+machine-readable runtime contract alongside the published
 [support matrix](docs/WEB_SUPPORT_MATRIX.md). Local Chromium/Firefox/WebKit
 correctness checks are green; headed representative-hardware performance,
 Safari proper, and physical Android/iOS gates remain before a stable Web runtime

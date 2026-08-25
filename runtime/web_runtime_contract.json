@@ -1,0 +1,158 @@
+{
+  "contract_version": 1,
+  "profiles": {
+    "web_core": {
+      "api_version": 2,
+      "api_version_method": "get_runtime_bridge_api_version",
+      "capability_contract": "runtime-api-v2",
+      "expected_build_profile": "web_core",
+      "hard_limits": {
+        "maximum_collision_focus_radius_regions": 4,
+        "maximum_collision_regions": 16,
+        "maximum_completed_results": 256,
+        "maximum_estimated_region_bytes": 1073741824,
+        "maximum_fragment_samples": 4,
+        "maximum_height_tile_height": 67,
+        "maximum_height_tile_samples": 4489,
+        "maximum_height_tile_width": 67,
+        "maximum_pending_work": 128,
+        "maximum_region_ops_per_step": 16,
+        "maximum_regions_per_tile": 16,
+        "maximum_resident_regions": 64,
+        "maximum_resident_tiles": 64,
+        "maximum_sample_ops_per_step": 16384,
+        "maximum_texture_array_layers": 16,
+        "maximum_texture_dimension": 2048,
+        "minimum_sample_ops_per_step": 128
+      },
+      "height_formats": [
+        "r32f_metres"
+      ],
+      "native_class": "MTerrain",
+      "required_capabilities": {
+        "api_stability": "experimental",
+        "bounded_collision": true,
+        "bounded_update_scheduler": true,
+        "collision_focus": true,
+        "compatibility_materials": true,
+        "height_tile_apply": true,
+        "height_tile_queue": true,
+        "height_tile_release": true,
+        "heightfield_collision": true,
+        "heightfield_terrain": true,
+        "runtime_material_configuration": true,
+        "runtime_memory_only": true,
+        "runtime_state_snapshot": true,
+        "single_threaded": true,
+        "visual_lod": true
+      },
+      "required_methods": [
+        "apply_height_tile",
+        "cancel_runtime_work",
+        "configure_runtime_limits",
+        "configure_runtime_material",
+        "get_runtime_bridge_api_version",
+        "get_runtime_capabilities",
+        "get_runtime_memory_only",
+        "get_runtime_state",
+        "queue_height_tile",
+        "release_height_tile",
+        "release_runtime_tile",
+        "request_runtime_collision_focus",
+        "set_custom_camera",
+        "set_grid_create",
+        "set_region_size",
+        "set_runtime_memory_only",
+        "set_terrain_size",
+        "step_runtime_work",
+        "take_runtime_work_result"
+      ],
+      "state_contract": "mterrain-runtime-state/v2",
+      "unsupported_capabilities": {
+        "foliage": false,
+        "foliage_collision": false,
+        "hlod_hysteresis": false,
+        "mesh_hlod": false,
+        "navigation": false,
+        "path_collision": false,
+        "paths": false,
+        "runtime_curve_deformation": false,
+        "runtime_mesh_generation": false,
+        "runtime_navigation_baking": false
+      }
+    },
+    "web_extended": {
+      "capability_contract": "runtime-api-v2+extended-api-v1",
+      "companion": {
+        "api_version": 1,
+        "class": "MTerrainWebExtendedRuntime",
+        "hard_limits": {
+          "maximum_allowed_resource_paths": 256,
+          "maximum_foliage_instances": 8192,
+          "maximum_hlod_levels": 4,
+          "maximum_installed_per_capability": 128,
+          "maximum_mesh_indices": 262144,
+          "maximum_mesh_vertices": 65536,
+          "maximum_navigation_indices": 65536,
+          "maximum_navigation_polygons": 8192,
+          "maximum_navigation_vertices": 8192,
+          "maximum_pending_work": 128,
+          "maximum_result_receipts": 256
+        },
+        "path": "runtime/web_extended_runtime.gd",
+        "required_capabilities": {
+          "api_stability": "experimental",
+          "foliage": true,
+          "mesh_hlod": true,
+          "navigation": true,
+          "paths": true,
+          "single_threaded": true
+        },
+        "required_methods": [
+          "cancel_runtime_work",
+          "configure_limits",
+          "get_runtime_capabilities",
+          "get_runtime_state",
+          "queue_foliage",
+          "queue_mesh_hlod",
+          "queue_navigation",
+          "queue_path",
+          "release_projection",
+          "step_runtime_work",
+          "take_runtime_work_result"
+        ],
+        "state_contract": "mterrain-web-extended-runtime-state/v1",
+        "unsupported_capabilities": {
+          "foliage_collision": false,
+          "path_collision": false,
+          "runtime_curve_deformation": false,
+          "runtime_mesh_generation": false,
+          "runtime_navigation_baking": false
+        }
+      },
+      "expected_build_profile": "web_extended",
+      "inherits": "web_core",
+      "native_required_capabilities": {
+        "extended_runtime_api_version": 1,
+        "extended_runtime_class": "MTerrainWebExtendedRuntime",
+        "foliage": true,
+        "hlod_hysteresis": true,
+        "mesh_hlod": true,
+        "navigation": true,
+        "paths": true
+      }
+    }
+  },
+  "schema": "mterrain-web-runtime-contract-v1",
+  "status": "experimental",
+  "target": {
+    "architecture": "wasm32",
+    "dynamic_linking": true,
+    "godot": "4.7.stable.official.5b4e0cb0f",
+    "platform": "web",
+    "precision": "single",
+    "renderer": "Compatibility",
+    "threads": false,
+    "web_api": "WebGL2"
+  }
+}
