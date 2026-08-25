@@ -166,6 +166,35 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn('get_current_rendering_method() == "gl_compatibility"', grid)
         self.assertNotIn("get_rendering_device()", grid)
 
+    def test_native_regression_binding_profile_covers_full_source(self) -> None:
+        profile_path = (
+            ROOT / "gdextension" / "native_full_build_profile.json"
+        )
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        enabled = set(profile["enabled_classes"])
+        for required in (
+            "EditorInterface",
+            "EditorScript",
+            "NavigationServer3D",
+            "PhysicsServer3D",
+            "RenderingServer",
+            "WorkerThreadPool",
+        ):
+            self.assertIn(required, enabled)
+        self.assertNotIn("EditorPlugin", enabled)
+        self.assertNotIn("RenderingDevice", enabled)
+
+        native_script = (
+            ROOT / "scripts" / "run_native_regression_builds.sh"
+        ).read_text(encoding="utf-8")
+        profile_argument = (
+            'build_profile="$ROOT_DIR/gdextension/'
+            'native_full_build_profile.json"'
+        )
+        self.assertEqual(native_script.count(profile_argument), 2)
+        self.assertIn("build_profile full template_debug", native_script)
+        self.assertIn("build_profile full template_release", native_script)
+
     def test_manifest_selects_nothread_wasm_side_modules(self) -> None:
         manifest = (ROOT / "gdextension" / "MTerrain.txt").read_text(
             encoding="utf-8"

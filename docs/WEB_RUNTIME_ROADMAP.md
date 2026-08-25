@@ -69,6 +69,10 @@ The implemented local release-candidate slice now includes:
   tools, compiles both Web profiles in debug/release, runs full/core/extended
   native regressions, packages and reverifies split bundles, retains PR review
   artifacts, and publishes only a fully assembled immutable tagged prerelease.
+  Native builds still compile every full-profile MTerrain source while an
+  explicit engine-class build profile bounds generated `godot-cpp` wrappers;
+  this avoids host archive command-line limits without reducing the native
+  MTerrain class registry.
 - Web compiler inputs map checkout paths to `/mterrain`; build receipt and
   archive timestamps use the source commit epoch. Each release publishes an
   index binding source, profile, raw/Brotli artifact digests, companion digest,

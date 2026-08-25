@@ -51,11 +51,13 @@ FULL_RELEASE="$ROOT_DIR/build/mterrain/native-full-release"
 CORE_DEBUG="$ROOT_DIR/build/mterrain/native-web-core"
 EXTENDED_DEBUG="$ROOT_DIR/build/mterrain/native-web-extended"
 
-build_profile full template_debug "$FULL_DEBUG"
+build_profile full template_debug "$FULL_DEBUG" \
+	build_profile="$ROOT_DIR/gdextension/native_full_build_profile.json"
 GODOT_BIN="$GODOT_BIN" "$ROOT_DIR/scripts/run_native_full_smoke.sh" \
 	"$FULL_DEBUG/libMTerrain.linux.template_debug.x86_64.so"
 
-build_profile full template_release "$FULL_RELEASE"
+build_profile full template_release "$FULL_RELEASE" \
+	build_profile="$ROOT_DIR/gdextension/native_full_build_profile.json"
 test -s "$FULL_RELEASE/libMTerrain.linux.template_release.x86_64.so"
 
 build_profile web_core template_debug "$CORE_DEBUG" \

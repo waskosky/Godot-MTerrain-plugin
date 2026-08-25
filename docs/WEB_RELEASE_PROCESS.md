@@ -52,7 +52,11 @@ export MTERRAIN_REQUIRE_CLEAN=1
 
 That lane compiles full native debug and release profiles, loads the registered
 native authoring/runtime classes, loads native core and extended profiles, and
-runs both bounded runtime smokes.
+runs both bounded runtime smokes. The full MTerrain source still compiles; its
+generated `godot-cpp` wrapper set is constrained by
+`gdextension/native_full_build_profile.json` to the engine classes that source
+uses. This keeps the Linux static archive below host command-line limits without
+removing an MTerrain subsystem or changing the shipped native class registry.
 
 ## Published assets
 
