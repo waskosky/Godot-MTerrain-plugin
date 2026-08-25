@@ -66,8 +66,9 @@ class WebSourceContractTests(unittest.TestCase):
             self.assertEqual(toolchain["brotli_quality"], 11)
             self.assertEqual(
                 toolchain["binaryen_version"],
-                "wasm-opt version 124 (version_123-495-g6d5fed324)",
+                "wasm-opt version 124",
             )
+            self.assertEqual(toolchain["binaryen_commit"], "6d5fed324")
             self.assertEqual(
                 toolchain["binding_profile"],
                 "gdextension/web_core_build_profile.json",

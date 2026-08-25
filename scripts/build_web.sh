@@ -32,7 +32,7 @@ case "$WEB_PROFILE" in
 		;;
 esac
 
-IFS=$'\t' read -r GODOT_PIN GODOT_COMMIT GODOT_CPP_PIN EMCC_PIN EMSDK_PIN BINARYEN_PIN SCONS_PIN BROTLI_PIN BROTLI_QUALITY < <(
+IFS=$'\t' read -r GODOT_PIN GODOT_COMMIT GODOT_CPP_PIN EMCC_PIN EMSDK_PIN BINARYEN_PIN BINARYEN_COMMIT_PIN SCONS_PIN BROTLI_PIN BROTLI_QUALITY < <(
 	python3 - "$TOOLCHAIN_FILE" <<'PY'
 import json
 import sys
@@ -45,6 +45,7 @@ print(
     data["emscripten_version"],
     data["emsdk_commit"],
     data["binaryen_version"],
+    data["binaryen_commit"],
     data["scons_version"],
     data["brotli_version"],
     data["brotli_quality"],
@@ -111,8 +112,9 @@ if [[ ! -x "$WASM_OPT_BIN" ]]; then
 	exit 1
 fi
 ACTUAL_BINARYEN="$($WASM_OPT_BIN --version)"
-if [[ "$ACTUAL_BINARYEN" != "$BINARYEN_PIN" ]]; then
-	printf 'Binaryen pin mismatch: expected %s, got %s.\n' "$BINARYEN_PIN" "$ACTUAL_BINARYEN" >&2
+if [[ "$ACTUAL_BINARYEN" != "$BINARYEN_PIN"* || "$ACTUAL_BINARYEN" != *"g$BINARYEN_COMMIT_PIN"* ]]; then
+	printf 'Binaryen pin mismatch: expected %s from commit %s, got %s.\n' \
+		"$BINARYEN_PIN" "$BINARYEN_COMMIT_PIN" "$ACTUAL_BINARYEN" >&2
 	exit 1
 fi
 
