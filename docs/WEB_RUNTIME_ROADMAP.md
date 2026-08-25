@@ -1,8 +1,10 @@
 # MTerrain Web Runtime Roadmap
 
 - Status: active delivery; Milestone 3/4 implementations and the first bounded
-  `web_extended` projections locally verified on 2026-08-24; representative
-  hardware, physical-mobile, clean-CI, and release gates remain open
+  `web_extended` projections locally verified on 2026-08-24; clean-clone Web
+  builds, native regressions, split distribution bundles, and immutable
+  prerelease automation added for `web-runtime-v0.1.0-rc.1` on 2026-08-25;
+  representative hardware and physical-mobile stable-release gates remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -62,8 +64,21 @@ The implemented local release-candidate slice now includes:
   objects wait for their target-width-specific binding library, preventing
   native/Web header races without forcing every invocation to regenerate it.
 - A pinned, least-privilege source-contract workflow checks standalone
-  governance, profile/manifest invariants, and Python/shell parsing on pull
-  requests and default-branch pushes. It does not yet compile Web artifacts.
+  governance, profile/manifest invariants, and Python/shell parsing. A separate
+  clean-clone distribution workflow resolves digest/commit-pinned Linux host
+  tools, compiles both Web profiles in debug/release, runs full/core/extended
+  native regressions, packages and reverifies split bundles, retains PR review
+  artifacts, and publishes only a fully assembled immutable tagged prerelease.
+  Native builds still compile every full-profile MTerrain source while an
+  explicit engine-class build profile bounds generated `godot-cpp` wrappers;
+  this avoids host archive command-line limits without reducing the native
+  MTerrain class registry.
+- Web compiler inputs map checkout paths to `/mterrain`; build receipt and
+  archive timestamps use the source commit epoch. Each release publishes an
+  index binding source, profile, raw/Brotli artifact digests, companion digest,
+  and bundle digests plus `SHA256SUMS`. This establishes a controlled clean-clone
+  procedure without claiming cross-kernel byte identity that has not been
+  separately measured.
 - Core thread/future launch sites have explicit synchronous Web branches. The
   automatic legacy terrain and physics loops default off because runtime API v2
   owns bounded scheduling and collision residency.
@@ -98,13 +113,13 @@ The implemented local release-candidate slice now includes:
   compositor screenshot despite healthy WebGL pixels. These are local automated
   correctness checks, not headed-hardware or physical-device support claims.
 - Binaryen inspection records the artifact feature set and rejects thread or
-  shared-memory requirements. In the final dirty implementation worktree, core
-  debug/release side modules are 937,216/904,906 raw bytes and
-  139,171/138,168 bytes at Brotli quality 11; extended side modules are
-  937,522/905,212 raw and 139,094/138,323 compressed. The extended profile also
-  packages a separately hashed 33,220-byte companion script. Receipts from the
-  clean merged commit remain the release-bearing provenance rather than these
-  development measurements.
+  shared-memory requirements. In the fresh local release-candidate build, core
+  debug/release side modules are 935,616/904,714 raw bytes and
+  138,987/138,084 bytes at Brotli quality 11; extended side modules are
+  935,922/905,020 raw and 139,049/138,202 compressed. The extended profile also
+  packages a separately hashed 33,220-byte companion script. The tagged clean-CI
+  receipts and release index remain authoritative rather than these local
+  measurements.
 
 The remaining gaps are deliberately material:
 
@@ -117,8 +132,11 @@ The remaining gaps are deliberately material:
 3. Equal-detail tile/region seams are covered. One-level/max LOD transitions,
    negative offsets, repeated promotion/demotion, deliberate border-mismatch
    rejection, and destroy/recreate recovery remain open fixtures.
-4. Web compile/export/browser CI, clean-clone reproduction, immutable artifacts,
-   and a published support matrix are not yet present; current CI is source-only.
+4. Clean-clone Web compile/package CI, native regressions, immutable prerelease
+   publication, and the support/capability matrix are present. Browser export
+   remains a local automated gate because the pinned dynamic-link template is
+   deliberately not hidden inside a generic CI dependency; hosted browser CI is
+   still open.
 5. Headed Chrome, Firefox, and Safari plus physical Android- and iOS-class device
    evidence remain mandatory before a browser release claim.
 6. Foliage, mesh HLOD, navigation, and paths have bounded data-first projection
@@ -633,9 +651,10 @@ configuration, and never weakened solely to make a regression pass.
 
 The local gate is green for debug/release Web compilation, full native debug
 compilation, native core loading, export, and Chromium/Firefox/WebKit load and
-framebuffer probes. Before treating this as a distributable milestone, reproduce
-it from the clean merged commit, add native release and clean-clone CI evidence,
-and publish immutable artifacts/receipts.
+framebuffer probes. The release-candidate lane now reproduces both Web profiles
+from a clean checkout, adds native release compilation and regression smokes,
+and publishes only CI-produced, receipt-bound immutable assets. Representative
+browser performance remains a higher support gate.
 
 ### Milestone 2 — Batch height projection — implementation locally verified 2026-08-24
 
@@ -694,13 +713,20 @@ and WebKit satisfy local correctness. Equal-detail LOD rendering, headed hardwar
 performance, Safari proper, and physical Android/iOS evidence keep the release
 gate open.
 
-### Milestone 5 — First Web runtime release
+### Milestone 5 — First Web runtime release — prerelease distribution delivered; stable gate open
 
-- Versioned source tag and immutable artifacts/receipts.
-- Clean-clone build instructions reproduce the artifacts.
-- Browser support and capability matrix is published.
-- Rollback to the previous runtime artifact is tested.
-- Native editor and runtime regression suites are green.
+- `web-runtime-v0.1.0-rc.1` is the versioned review baseline; the tag workflow
+  publishes core/extended bundles and receipts only after clean Web and native
+  jobs pass, with repository release immutability and GitHub attestation.
+- `WEB_RELEASE_PROCESS.md` is the clean-clone build, verification, integration,
+  promotion, and rollback contract.
+- `WEB_SUPPORT_MATRIX.md` publishes the exact capability/browser evidence and
+  keeps headed Safari, Android, iOS, and representative performance rows open.
+- Full native debug/release, full-profile registration, native core/extended,
+  and extended companion regressions are mandatory CI jobs.
+- This first candidate establishes the prior-artifact baseline. A true
+  candidate-to-previous rollback is necessarily deferred until a second
+  immutable version exists and remains required before a stable release.
 
 ### Milestone 6+ — Extended capabilities — first projections locally verified 2026-08-24
 
@@ -716,7 +742,9 @@ navigation route, perform an HLOD swap, capture a nonblank 47-color framebuffer,
 and report no console, page, or request errors. Each capability still requires
 its own representative-content, long-traversal performance/memory,
 physical-device, and native-regression gate; they do not share one blanket
-“feature parity” approval. Clean-merge reproduction remains part of Milestone 5.
+“feature parity” approval. Clean-merge compilation and packaging are now common
+release gates; each extended capability still owns its representative-content
+and physical-device evidence.
 
 ## 9. Major decision checkpoints
 

@@ -48,6 +48,19 @@ binding_env = SConscript(
     # variant tree instead of unresolved source nodes on clean full builds.
     duplicate=1,
 )
+# Web side modules retain enough debug/source-name data for useful diagnostics.
+# Normalize the checkout prefix in both godot-cpp and MTerrain objects so CI,
+# local clean clones, and linked worktrees do not publish machine-specific paths.
+if binding_env["platform"] == "web":
+    web_source_root = str(Path(Dir(".").abspath).parent.resolve())
+    web_source_mapping = web_source_root + "=/mterrain"
+    binding_env.Append(
+        CCFLAGS=[
+            "-ffile-prefix-map=" + web_source_mapping,
+            "-fdebug-prefix-map=" + web_source_mapping,
+            "-fmacro-prefix-map=" + web_source_mapping,
+        ]
+    )
 # Profile-specific preprocessor definitions belong only to MTerrain objects.
 # Mutating the environment returned by godot-cpp would retroactively change
 # its command signatures, forcing an identical binding archive to rebuild when

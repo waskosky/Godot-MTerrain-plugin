@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -48,8 +49,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def receipt_timestamp() -> tuple[int, str]:
+    raw_epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw_epoch is None:
+        raw_epoch = git("show", "-s", "--format=%ct", "HEAD")
+    try:
+        epoch = int(raw_epoch)
+    except ValueError as error:
+        raise SystemExit("SOURCE_DATE_EPOCH must be an integer") from error
+    if epoch <= 0:
+        raise SystemExit("SOURCE_DATE_EPOCH must be positive")
+    created_at = dt.datetime.fromtimestamp(
+        epoch, tz=dt.timezone.utc
+    ).isoformat()
+    return epoch, created_at
+
+
 def main() -> int:
     args = parse_args()
+    source_date_epoch, created_at = receipt_timestamp()
     toolchain = json.loads(args.toolchain.read_text(encoding="utf-8"))
     if toolchain.get("profile") != args.profile:
         raise SystemExit(
@@ -92,7 +110,8 @@ def main() -> int:
     extended = args.profile == "web_extended"
     receipt = {
         "schema": "mterrain-web-build-receipt-v2",
-        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "created_at": created_at,
+        "source_date_epoch": source_date_epoch,
         "source": {
             "mterrain_commit": git("rev-parse", "HEAD"),
             "mterrain_tree": git("rev-parse", "HEAD^{tree}"),

@@ -1,0 +1,181 @@
+name: Web runtime distribution
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+    tags:
+      - web-runtime-v*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-runtime-distribution-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  web-artifacts:
+    name: Clean Web builds and packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      MTERRAIN_CI_TOOLS: ${{ github.workspace }}/../mterrain-ci/web-v1
+    steps:
+      - name: Check out source and pinned bindings
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Run source contract before compilation
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          python3 -m py_compile scripts/*.py tests/*.py
+          bash -n scripts/*.sh
+
+      - name: Install host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake ninja-build python3-venv
+
+      - name: Restore exact Web toolchain
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ${{ env.MTERRAIN_CI_TOOLS }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mterrain-web-${{ hashFiles('tools/*toolchain.json', 'scripts/install_web_ci_toolchain.sh') }}
+
+      - name: Resolve and validate pinned Web toolchain
+        run: ./scripts/install_web_ci_toolchain.sh "$MTERRAIN_CI_TOOLS" web
+
+      - name: Build clean core and extended artifacts
+        run: |
+          source "$MTERRAIN_CI_TOOLS/environment.sh"
+          export MTERRAIN_REQUIRE_CLEAN=1
+          ./scripts/build_web.sh all web_core
+          ./scripts/build_web.sh all web_extended
+
+      - name: Package and independently verify the distribution
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            distribution_version="$GITHUB_REF_NAME"
+          else
+            distribution_version="commit-${GITHUB_SHA:0:12}"
+          fi
+          python3 scripts/package_web_release.py \
+            --version "$distribution_version"
+          python3 scripts/package_web_release.py \
+            --verify-dir build/distribution
+
+      - name: Retain review artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mterrain-web-distribution-${{ github.sha }}
+          path: build/distribution/*
+          if-no-files-found: error
+          retention-days: 30
+
+  native-regressions:
+    name: Native debug/release regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      MTERRAIN_CI_TOOLS: ${{ github.workspace }}/../mterrain-ci/host-v1
+    steps:
+      - name: Check out source and pinned bindings
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes python3-venv
+
+      - name: Restore exact host toolchain
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ${{ env.MTERRAIN_CI_TOOLS }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mterrain-host-${{ hashFiles('tools/ci_toolchain.json', 'scripts/install_web_ci_toolchain.sh') }}
+
+      - name: Resolve and validate pinned host toolchain
+        run: ./scripts/install_web_ci_toolchain.sh "$MTERRAIN_CI_TOOLS" host
+
+      - name: Compile and smoke native profiles
+        run: |
+          source "$MTERRAIN_CI_TOOLS/environment.sh"
+          export MTERRAIN_REQUIRE_CLEAN=1
+          ./scripts/run_native_regression_builds.sh
+
+  publish-release:
+    name: Publish immutable prerelease
+    if: startsWith(github.ref, 'refs/tags/web-runtime-v')
+    needs:
+      - web-artifacts
+      - native-regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tagged release contract
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Download the exact green distribution
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mterrain-web-distribution-${{ github.sha }}
+          path: build/distribution
+
+      - name: Reverify assets and tag ancestry
+        run: |
+          git fetch origin master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          python3 scripts/package_web_release.py \
+            --verify-dir build/distribution
+
+      - name: Create a complete draft and publish it atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/existing-release.json" <<'PY'
+          import json
+          import sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          if not release.get("immutable") or release.get("draft"):
+              raise SystemExit("Existing release is not an immutable published release")
+          PY
+          else
+            gh release create "$GITHUB_REF_NAME" build/distribution/* \
+              --draft \
+              --prerelease \
+              --verify-tag \
+              --title "MTerrain Web runtime $GITHUB_REF_NAME" \
+              --notes-file docs/WEB_RUNTIME_RC_NOTES.md
+            gh release edit "$GITHUB_REF_NAME" --draft=false
+          fi
+
+      - name: Verify GitHub release attestation and every local asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verified=0
+          for _attempt in {1..12}; do
+            if gh release verify "$GITHUB_REF_NAME"; then
+              verified=1
+              break
+            fi
+            sleep 5
+          done
+          test "$verified" = 1
+          for asset in build/distribution/*; do
+            gh release verify-asset "$GITHUB_REF_NAME" "$asset"
+          done

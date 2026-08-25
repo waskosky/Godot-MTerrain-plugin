@@ -13,10 +13,13 @@ texture-optional materials. The opt-in
 `web_extended` package adds bounded data-first foliage, precomputed navigation,
 baked-path, and hysteretic mesh-HLOD projections without linking the native
 authoring subsystems. Its fixtures include exported grass/road/rock/navigation
-resources, moving revisions, and a real navigation path query. Native and local
-Chromium/Firefox/WebKit correctness checks are green; clean CI, headed
-representative-hardware performance, Safari proper, and physical Android/iOS
-gates remain before a Web runtime release claim.
+resources, moving revisions, and a real navigation path query. The
+`web-runtime-v0.1.0-rc.1` review candidate adds clean-clone debug/release builds,
+native regressions, immutable profile bundles and receipts, and a published
+[support matrix](docs/WEB_SUPPORT_MATRIX.md). Local Chromium/Firefox/WebKit
+correctness checks are green; headed representative-hardware performance,
+Safari proper, and physical Android/iOS gates remain before a stable Web runtime
+claim.
 
 ![Screenshot_20230707_104154](https://github.com/mohsenph69/Godot-MTerrain-plugin/assets/52196206/7e3eb7da-af57-4ae5-8f55-f9fc1c8b26f8)
 
@@ -79,8 +82,11 @@ when packaging another layout.
 
 The experimental browser artifacts use the fully pinned Godot, `godot-cpp`,
 Emscripten/emsdk, Binaryen, SCons, and Brotli tuple in
-`tools/web_toolchain.json`. Install/activate those exact tools, then provide
-their executables without copying them into the repository:
+`tools/web_toolchain.json`. Release CI resolves the matching Linux host tools
+from `tools/ci_toolchain.json`; see the
+[release process](docs/WEB_RELEASE_PROCESS.md) for a clean-clone reproduction.
+On another host, install/activate the exact tools, then provide their
+executables without copying them into the repository:
 
 ```sh
 export GODOT_BIN=/path/to/Godot_4.7
@@ -101,6 +107,12 @@ selected. The build fails if a no-thread artifact requests threads or shared
 memory. These directories are ignored build output. A project must use a Godot
 4.7 Web export template built with GDExtension support, dynamic linking, and
 `threads=no`.
+
+CI packages the two profiles separately. Each tagged prerelease contains both
+bundles, their machine-readable release index, `SHA256SUMS`, and GitHub's
+immutable release attestation. Start with `web_core`; choose `web_extended` only
+when its optional projections have a named consumer. These bundles are Web
+runtime inputs and do not replace the native editor package.
 
 Builds keep target-specific `godot-cpp` generated bindings and libraries under
 `build/godot-cpp/`, so native 64-bit and wasm32 invocations do not overwrite one
