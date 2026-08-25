@@ -1,0 +1,28 @@
+{
+  "schema": "mterrain-ci-toolchain-v1",
+  "host": {
+    "os": "linux",
+    "architecture": "x86_64"
+  },
+  "godot": {
+    "version": "4.7.stable.official.5b4e0cb0f",
+    "asset_url": "https://github.com/godotengine/godot/releases/download/4.7-stable/Godot_v4.7-stable_linux.x86_64.zip",
+    "asset_sha256": "0b1a6c54c2c619c12e169fe9241edda4b81080b519451cec2984bf0d2c6cb73c",
+    "executable": "Godot_v4.7-stable_linux.x86_64"
+  },
+  "scons": {
+    "version": "4.8.1",
+    "wheel_url": "https://files.pythonhosted.org/packages/b8/a7/823091100c88d7d992c8c608d82a88ed59e227d13f8ccb33ea7a96d43d51/SCons-4.8.1-py3-none-any.whl",
+    "wheel_sha256": "a4c3b434330e2d7d975002fd6783284ba348bf394db94c8f83fdc5bf69cdb8d7"
+  },
+  "emsdk": {
+    "version": "4.0.20",
+    "commit": "e4fe26ef59168ff44f4c23c466e497bf60b3411e",
+    "repository": "https://github.com/emscripten-core/emsdk.git"
+  },
+  "brotli": {
+    "version": "1.2.0",
+    "commit": "028fb5a23661f123017c060daa546b55cf4bde29",
+    "repository": "https://github.com/google/brotli.git"
+  }
+}

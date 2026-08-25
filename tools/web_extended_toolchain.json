@@ -16,6 +16,8 @@
   "precision": "single",
   "threads": false,
   "dynamic_linking": true,
+  "source_path_mapping": "/mterrain",
+  "receipt_timestamp": "source_commit_epoch",
   "profile": "web_extended",
   "binding_profile": "gdextension/web_core_build_profile.json",
   "native_binding_profile_shared_with": "web_core",

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,9 @@ class WebSourceContractTests(unittest.TestCase):
             "AGENTS.md",
             "docs/WEB_RUNTIME_ROADMAP.md",
             "docs/WEB_RUNTIME_API.md",
+            "docs/WEB_RELEASE_PROCESS.md",
+            "docs/WEB_SUPPORT_MATRIX.md",
+            "docs/WEB_RUNTIME_RC_NOTES.md",
         ):
             source = (ROOT / relative).read_text(encoding="utf-8")
             self.assertIsNone(
@@ -68,6 +73,10 @@ class WebSourceContractTests(unittest.TestCase):
                 "gdextension/web_core_build_profile.json",
             )
             self.assertEqual(actual_godot_cpp, toolchain["godot_cpp_commit"])
+            self.assertEqual(toolchain["source_path_mapping"], "/mterrain")
+            self.assertEqual(
+                toolchain["receipt_timestamp"], "source_commit_epoch"
+            )
         self.assertEqual(
             toolchains["web_extended"]["runtime_companion"],
             "runtime/web_extended_runtime.gd",
@@ -76,6 +85,40 @@ class WebSourceContractTests(unittest.TestCase):
             toolchains["web_extended"]["native_binding_profile_shared_with"],
             "web_core",
         )
+
+        ci_toolchain = json.loads(
+            (ROOT / "tools" / "ci_toolchain.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(ci_toolchain["schema"], "mterrain-ci-toolchain-v1")
+        self.assertEqual(
+            ci_toolchain["host"],
+            {"os": "linux", "architecture": "x86_64"},
+        )
+        self.assertEqual(
+            ci_toolchain["godot"]["version"],
+            toolchains["web_core"]["godot"]["version"],
+        )
+        self.assertEqual(
+            ci_toolchain["scons"]["version"],
+            toolchains["web_core"]["scons_version"],
+        )
+        self.assertEqual(
+            ci_toolchain["emsdk"]["version"],
+            toolchains["web_core"]["emscripten_version"],
+        )
+        self.assertEqual(
+            ci_toolchain["emsdk"]["commit"],
+            toolchains["web_core"]["emsdk_commit"],
+        )
+        self.assertEqual(
+            ci_toolchain["brotli"]["version"],
+            toolchains["web_core"]["brotli_version"],
+        )
+        for category, field in (
+            ("godot", "asset_sha256"),
+            ("scons", "wheel_sha256"),
+        ):
+            self.assertRegex(ci_toolchain[category][field], r"\A[0-9a-f]{64}\Z")
 
     def test_web_core_profile_fails_closed(self) -> None:
         sconstruct = (ROOT / "gdextension" / "SConstruct").read_text(
@@ -86,6 +129,12 @@ class WebSourceContractTests(unittest.TestCase):
             sconstruct,
         )
         self.assertIn('env["platform"] == "web"', sconstruct)
+        self.assertIn(
+            'web_source_mapping = web_source_root + "=/mterrain"', sconstruct
+        )
+        self.assertIn('"-ffile-prefix-map=" + web_source_mapping', sconstruct)
+        self.assertIn('"-fdebug-prefix-map=" + web_source_mapping', sconstruct)
+        self.assertIn('"-fmacro-prefix-map=" + web_source_mapping', sconstruct)
         self.assertIn('("moctree.cpp", "mtool.cpp")', sconstruct)
         for source_group in ("grass", "navmesh", "octmesh", "path", "hlod"):
             self.assertIn(f'Glob("src/{source_group}/*.cpp")', sconstruct)
@@ -275,6 +324,8 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn('receipt["runtime_companion"]', receipt)
         self.assertIn('"binaryen": args.wasm_opt_version', receipt)
         self.assertIn('"wasm_features": wasm_features', receipt)
+        self.assertIn('os.environ.get("SOURCE_DATE_EPOCH")', receipt)
+        self.assertIn('"source_date_epoch": source_date_epoch', receipt)
         self.assertIn('local wasm_features', build_script)
         self.assertIn('--enable-threads', build_script)
         self.assertIn('--enable-shared-everything', build_script)
@@ -284,6 +335,51 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn('custom_features="mterrain_{profile}"', exporter)
         self.assertIn('ROOT / "runtime" / "web_extended_runtime.gd"', exporter)
         self.assertIn('shutil.rmtree(stage / "fixtures"', exporter)
+
+    def test_distribution_workflow_builds_both_profiles_before_release(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "web-runtime-distribution.yml"
+        ).read_text(encoding="utf-8")
+        for expected in (
+            "submodules: recursive",
+            "./scripts/build_web.sh all web_core",
+            "./scripts/build_web.sh all web_extended",
+            "./scripts/run_native_regression_builds.sh",
+            "--verify-dir build/distribution",
+            "needs:",
+            "web-artifacts",
+            "native-regressions",
+            "gh release create",
+            "--draft",
+            "gh release edit",
+            "gh release verify-asset",
+        ):
+            self.assertIn(expected, workflow)
+        self.assertIn("permissions:\n      contents: write", workflow)
+        self.assertNotRegex(workflow, r"uses: [^\n]+@(?![0-9a-f]{40})")
+
+    def test_release_archives_are_normalized_and_deterministic(self) -> None:
+        package_path = ROOT / "scripts" / "package_web_release.py"
+        specification = importlib.util.spec_from_file_location(
+            "mterrain_package_web_release", package_path
+        )
+        self.assertIsNotNone(specification)
+        self.assertIsNotNone(specification.loader)
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        files = {
+            "candidate/LICENSE": b"license\n",
+            "candidate/mterrain/test.wasm": b"wasm\x00fixture",
+        }
+        first = module.archive_bytes(files, 1_700_000_000)
+        second = module.archive_bytes(files, 1_700_000_000)
+        self.assertEqual(first, second)
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / "candidate.tar.gz"
+            archive.write_bytes(first)
+            self.assertEqual(
+                module.safe_archive_members(archive, 1_700_000_000), files
+            )
 
     def test_runtime_smokes_require_an_initialized_height_tile(self) -> None:
         native_smoke = (ROOT / "tests" / "runtime_smoke" / "smoke.gd").read_text(
