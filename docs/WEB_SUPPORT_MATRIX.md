@@ -1,6 +1,6 @@
 # MTerrain Web support matrix
 
-This matrix describes the `web-runtime-v0.1.0-rc.1` review candidate. It is a
+This matrix describes the `web-runtime-v0.1.0-rc.2` review candidate. It is a
 bounded runtime candidate, not a claim that the native authoring plugin or every
 native runtime subsystem works in browsers.
 
@@ -51,8 +51,11 @@ from desktop emulation or a user-agent string.
 
 ## Release posture
 
-- `web-runtime-v0.1.0-rc.1` is suitable for integration and human review behind
+- `web-runtime-v0.1.0-rc.2` is suitable for integration and human review behind
   explicit capability selection.
+- Verify `runtime/web_runtime_contract.json` through the release index before
+  loading either profile; reject target, API, method, format, limit, or live
+  capability mismatches.
 - `web_core` is the preferred first integration profile. Select
   `web_extended` only when its supplied-data projections have a named consumer.
 - A stable general Web release remains gated on headed representative traversal,

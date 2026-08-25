@@ -14,7 +14,7 @@ against the two Web toolchain contracts, and refuses dirty source trees.
 git clone --recurse-submodules \
   https://github.com/waskosky/Godot-MTerrain-plugin.git
 cd Godot-MTerrain-plugin
-git checkout web-runtime-v0.1.0-rc.1
+git checkout web-runtime-v0.1.0-rc.2
 
 sudo apt-get update
 sudo apt-get install --yes cmake ninja-build python3-venv
@@ -27,7 +27,7 @@ export MTERRAIN_REQUIRE_CLEAN=1
 ./scripts/build_web.sh all web_core
 ./scripts/build_web.sh all web_extended
 python3 scripts/package_web_release.py \
-  --version web-runtime-v0.1.0-rc.1
+  --version web-runtime-v0.1.0-rc.2
 python3 scripts/package_web_release.py \
   --verify-dir build/distribution
 ```
@@ -67,18 +67,22 @@ Each release contains:
   matching receipts;
 - a `web_extended` archive with the same categories plus the separately hashed
   extended runtime companion;
+- one standalone `mterrain-web-runtime-contract-v1` document, also byte-identical
+  inside both archives, listing the target tuple, required methods/capabilities,
+  hard limits, state versions, and unsupported behavior;
 - one machine-readable `mterrain-web-release-index-v1` document binding source,
-  target, profile, artifact, companion, receipt, and bundle digests;
-- `SHA256SUMS` covering both bundles and the release index.
+  target, runtime contract, profile, artifact, companion, receipt, and bundle
+  digests;
+- `SHA256SUMS` covering both bundles, the runtime contract, and release index.
 
 Always begin with the release index. Verify a downloaded directory without
 extracting into a project:
 
 ```sh
 python3 scripts/package_web_release.py --verify-dir /path/to/downloads
-gh release verify web-runtime-v0.1.0-rc.1
-gh release verify-asset web-runtime-v0.1.0-rc.1 \
-  /path/to/downloads/Godot-MTerrain-web-runtime-v0.1.0-rc.1-web_core.tar.gz
+gh release verify web-runtime-v0.1.0-rc.2
+gh release verify-asset web-runtime-v0.1.0-rc.2 \
+  /path/to/downloads/Godot-MTerrain-web-runtime-v0.1.0-rc.2-web_core.tar.gz
 ```
 
 The GitHub repository has release immutability enabled. The release workflow
@@ -113,11 +117,12 @@ Treat a complete profile archive as the atomic unit:
 5. To roll back, repeat steps 2–4 with the retained prior archive; never copy an
    old wasm file over a newer manifest or companion in place.
 
-The first release candidate establishes the rollback baseline, so a genuine
-cross-version rollback cannot be closed until a second immutable candidate
-exists. Complete bundle integrity for both profile choices is verified now; the
-first second-version release must additionally prove candidate-to-prior
-restoration before it can be called stable.
+`web-runtime-v0.1.0-rc.1` remains the immutable prior-artifact baseline and
+`web-runtime-v0.1.0-rc.2` is the first candidate with a standalone runtime
+contract. Retain and verify both complete releases. This establishes a real
+cross-version artifact rollback pair; a stable claim still requires an actual
+candidate-to-prior project restoration followed by the same load, height, seam,
+collision, eviction, and nonblank-frame smokes on representative hardware.
 
 ## Maintainer publication sequence
 
@@ -131,5 +136,5 @@ restoration before it can be called stable.
 5. Verify the release is marked immutable and download/verify every asset.
 6. Advance consumers by exact release commit and bundle/index digest.
 
-`web-runtime-v0.1.0-rc.1` is a prerelease. Stable support additionally requires
+`web-runtime-v0.1.0-rc.2` is a prerelease. Stable support additionally requires
 the headed and physical-device gates in `WEB_SUPPORT_MATRIX.md`.
