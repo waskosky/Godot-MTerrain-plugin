@@ -190,6 +190,13 @@ class WebSourceContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("installation_tree", browser_receipt_writer)
         self.assertIn("mterrain-browser-toolchain-receipt-v2", browser_receipt_writer)
+        browser_installer = (
+            ROOT / "scripts" / "install_web_ci_toolchain.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("umask 0022", browser_installer)
+        self.assertIn(
+            'chmod -R go-w -- "$PLAYWRIGHT_BROWSERS_PATH"', browser_installer
+        )
 
     def test_web_core_profile_fails_closed(self) -> None:
         sconstruct = (ROOT / "gdextension" / "SConstruct").read_text(
@@ -815,6 +822,25 @@ class WebSourceContractTests(unittest.TestCase):
             first = module.installation_tree(installation)
             delegated.write_bytes(b"changed browser payload")
             second = module.installation_tree(installation)
+            self.assertNotEqual(first["tree_sha256"], second["tree_sha256"])
+
+    def test_browser_receipt_tree_digest_covers_executable_modes(self) -> None:
+        receipt_path = ROOT / "scripts" / "write_browser_toolchain_receipt.py"
+        specification = importlib.util.spec_from_file_location(
+            "mterrain_browser_mode_receipt", receipt_path
+        )
+        self.assertIsNotNone(specification)
+        self.assertIsNotNone(specification.loader)
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            launcher = Path(temporary) / "browser-1" / "browser"
+            launcher.parent.mkdir(parents=True)
+            launcher.write_bytes(b"fixed browser payload")
+            launcher.chmod(0o644)
+            first = module.installation_tree(launcher.parent)
+            launcher.chmod(0o755)
+            second = module.installation_tree(launcher.parent)
             self.assertNotEqual(first["tree_sha256"], second["tree_sha256"])
 
     def test_runtime_export_payload_contract_is_complete_and_tamper_evident(self) -> None:

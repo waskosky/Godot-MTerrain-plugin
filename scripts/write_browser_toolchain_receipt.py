@@ -135,7 +135,8 @@ def main() -> int:
             for key, value in tree.items():
                 if expected_tree.get(key) != value:
                     raise SystemExit(
-                        f"Pinned {name} browser installation drift: {key}"
+                        f"Pinned {name} browser installation drift: {key}; "
+                        f"expected {expected_tree.get(key)!r}, got {value!r}"
                     )
         records[name] = {
             "installation_relative": str(installation.relative_to(browsers_root)),

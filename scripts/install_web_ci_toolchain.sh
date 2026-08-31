@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Browser archives contain a mix of archive-owned modes and installer-created
+# marker files.  Keep the latter independent of the invoking shell's umask so
+# the pinned installation-tree receipts reproduce on developer and CI hosts.
+umask 0022
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS_ROOT="${1:-}"
 COMPONENTS="${2:-web}"
@@ -238,6 +243,7 @@ PY
 	)
 	PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
 		"$PLAYWRIGHT_BIN" install "${PLAYWRIGHT_BROWSERS[@]}"
+	chmod -R go-w -- "$PLAYWRIGHT_BROWSERS_PATH"
 	BROWSER_RECEIPT="$TOOLS_ROOT/browser-toolchain-receipt.json"
 	PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
 		"$PLAYWRIGHT_VENV/bin/python" "$ROOT_DIR/scripts/write_browser_toolchain_receipt.py" \

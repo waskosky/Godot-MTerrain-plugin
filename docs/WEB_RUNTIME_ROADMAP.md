@@ -14,8 +14,11 @@
   bounded HLOD cross-fades, and a 256-stop extended moving-residency fixture
   implemented and locally verified on 2026-08-31; both required clean-clone
   workflows now run on the maintained `integration/next` review feed as well as
-  `master`; representative hardware, calibration, physical-mobile, and actual
-  rollback evidence remain open
+  `master`; the first feed run passed clean Web builds and native regressions,
+  then exposed caller-umask drift in the browser-tree permission digest before
+  browser export; canonical `0022` installation modes and diagnostic mismatch
+  values are implemented for the rerun; representative hardware, calibration,
+  physical-mobile, and actual rollback evidence remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -166,8 +169,11 @@ The implemented local release-candidate slice now includes:
   accept the thresholds until that post-build receipt is supplied.
 - Godot 4.7's exact source commit and Playwright 1.62.0 wheel/browser inputs are
   pinned, including full Linux installation-tree digests rather than
-  launcher-only hashes. A repository builder emits immutable template/browser
-  receipts. Hosted CI now builds the no-thread dlink template before exporting
+  launcher-only hashes. Browser installation uses a fixed `0022` umask and
+  removes group/other-write bits before hashing, preserving executable-mode
+  coverage without making the receipt depend on a developer shell's umask. A
+  repository builder emits immutable template/browser receipts. Hosted CI now
+  builds the no-thread dlink template before exporting
   and probing both profiles in headed Chromium and Firefox under a virtual
   display. A checked aggregator binds those four nonblank/error-free smokes and
   their headed state to the exact source, debug side modules, template receipt,

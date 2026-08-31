@@ -51,6 +51,13 @@ clean rebuild proves the source and toolchain procedure; byte-for-byte equality
 across distinct kernels and filesystems is not claimed until a separate
 two-environment reproducibility gate records it.
 
+The browser installer fixes its process umask at `0022` and removes
+group/other-write bits from cached browser trees before hashing them. This keeps
+the complete content-and-mode digest independent of the caller's shell umask
+while retaining executable-mode validation. A different file, link target,
+directory layout, executable bit, or remaining permission change still fails
+closed, and a mismatch reports both expected and observed values.
+
 Run the native Linux regression lane independently:
 
 ```sh
