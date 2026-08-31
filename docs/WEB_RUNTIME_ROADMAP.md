@@ -22,8 +22,10 @@
   implemented; the following run accepted every browser/tool/template pin and
   passed all four individual headed Chromium/Firefox smokes, then exposed a
   producer/aggregator profile-token mismatch; explicit smoke profile identity
-  is implemented for the rerun; representative hardware, calibration,
-  physical-mobile, and actual rollback evidence remain open
+  closed that mismatch and the first complete clean-clone hosted correctness
+  gate passed at `948a348b13a5f721ca5a671170cdfeac3d539d73` in run
+  `33419761308`; representative hardware, calibration, physical-mobile, and
+  actual rollback evidence remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -189,8 +191,10 @@ The implemented local release-candidate slice now includes:
   from the verified candidate. Pinned Playwright WebKit is retained as a
   non-blocking diagnostic: its current Linux engine reaches the fixture marker
   and nonblank frame but emits framebuffer feedback errors. Actual Safari is a
-  separate physical gate. The first upstream hosted run is still required
-  evidence; configuration alone is not a pass or hardware-performance evidence.
+  separate physical gate. The first complete upstream hosted checkpoint passed
+  for both profiles in headed Chromium 151 and Firefox 153 at commit `948a348`
+  on 2026-08-31. Its SwiftShader/llvmpipe renderers make it software correctness
+  evidence, not hardware-performance evidence.
 - The rollback harness independently verifies and safely extracts complete
   candidate/prior archives, binds their manifest/material/side-module/native and
   template hashes into one ordered session, exports a cross-candidate API v2
@@ -222,29 +226,30 @@ The implemented local release-candidate slice now includes:
   the provisional hardware frame/startup thresholds, as a software-rendered run
   should; it is bounded-correctness diagnostic evidence, not a calibrated lane.
 - Binaryen inspection records the artifact feature set and rejects thread or
-  shared-memory requirements. In the `rc.2` local reference build, core
+  shared-memory requirements. At the first green hosted checkpoint, core
   debug/release side modules are 931,933/904,382 raw bytes and
   139,334/138,809 bytes at Brotli quality 11; extended side modules are
   932,239/904,704 raw and 139,576/138,913 compressed. The current production
   debug export totaled 11,691,852 deterministic-gzip bytes for core and
   11,716,450 for extended, excluding evidence instrumentation. The extended
-  profile packaged a separately hashed 33,220-byte companion script. The
-  2026-08-31 companion and fixture additions intentionally supersede those local
-  size observations; the next clean build receipts and release index are
-  authoritative.
+  profile packages a separately hashed 50,618-byte companion script. The
+  commit-addressed checkpoint bundles are 457,012 bytes for core and 467,973
+  bytes for extended; their release index and exact hashes are recorded in the
+  support matrix. Later candidate receipts remain authoritative for their own
+  source revision.
 
 The remaining gaps are deliberately material:
 
 1. The fixed long traversal and closed measurements now exist, but their
    provisional budgets need p50/p95/p99 frame time, worst-stall, heap/RID, and
    steady-state recovery calibration on every named representative lane.
-2. Per-phase runtime timing and the missing LOD/offset/border/recreate fixtures
-   are locally green. They still need the pinned Web builds and newly added
-   hosted workflow to pass from a clean upstream checkout.
+2. Per-phase runtime timing and the LOD/offset/border/recreate fixtures are green
+   in pinned clean-clone Web builds and hosted Chromium/Firefox correctness.
+   They still need the representative hardware and physical-browser lanes below.
 3. Hosted browser export and aggregate verification are implemented with a
    source-built, receipt-bound dynamic-link template. The first upstream headed
-   Chromium/Firefox run remains open evidence and, even when green, is
-   correctness rather than hardware performance or Safari-product evidence.
+   Chromium/Firefox aggregate is green, but it is software-rendered correctness
+   rather than hardware performance or Safari-product evidence.
    Playwright WebKit remains a pinned diagnostic until its Godot/WebGL errors
    are fixed; it is not allowed to stand in for Safari.
 4. Ordered core and extended whole-bundle rollback paths now exist, but each
