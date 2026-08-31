@@ -179,6 +179,19 @@ class WebSourceContractTests(unittest.TestCase):
         )
         installations = ci_toolchain["playwright"]["linux_x86_64_installations"]
         self.assertEqual(set(installations), {"chromium", "firefox", "webkit"})
+        tree_policy = ci_toolchain["playwright"]["linux_x86_64_tree_policy"]
+        self.assertEqual(
+            tree_policy["schema"], "mterrain-browser-immutable-tree-policy-v1"
+        )
+        self.assertEqual(
+            set(tree_policy["excluded_exact"]),
+            {
+                "DEPENDENCIES_VALIDATED",
+                "INSTALLATION_COMPLETE",
+                "firefox/.parentlock",
+            },
+        )
+        self.assertEqual(tree_policy["excluded_prefixes"], ["firefox/updates"])
         for installation in installations.values():
             self.assertRegex(installation["tree_sha256"], r"\A[0-9a-f]{64}\Z")
             self.assertGreater(installation["regular_files"], 0)
@@ -842,6 +855,35 @@ class WebSourceContractTests(unittest.TestCase):
             launcher.chmod(0o755)
             second = module.installation_tree(launcher.parent)
             self.assertNotEqual(first["tree_sha256"], second["tree_sha256"])
+
+    def test_browser_receipt_tree_digest_ignores_only_declared_runtime_state(
+        self,
+    ) -> None:
+        receipt_path = ROOT / "scripts" / "write_browser_toolchain_receipt.py"
+        specification = importlib.util.spec_from_file_location(
+            "mterrain_browser_immutable_receipt", receipt_path
+        )
+        self.assertIsNotNone(specification)
+        self.assertIsNotNone(specification.loader)
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            installation = Path(temporary) / "firefox-1"
+            payload = installation / "firefox" / "browser"
+            payload.parent.mkdir(parents=True)
+            payload.write_bytes(b"fixed browser payload")
+            before = module.installation_tree(installation)
+            (installation / "DEPENDENCIES_VALIDATED").write_bytes(b"")
+            (installation / "INSTALLATION_COMPLETE").write_bytes(b"")
+            (installation / "firefox" / ".parentlock").write_bytes(b"")
+            update = installation / "firefox" / "updates" / "0" / "update.status"
+            update.parent.mkdir(parents=True)
+            update.write_bytes(b"pending")
+            after = module.installation_tree(installation)
+            self.assertEqual(before, after)
+            payload.write_bytes(b"changed browser payload")
+            changed = module.installation_tree(installation)
+            self.assertNotEqual(after["tree_sha256"], changed["tree_sha256"])
 
     def test_runtime_export_payload_contract_is_complete_and_tamper_evident(self) -> None:
         common_path = ROOT / "scripts" / "web_evidence_common.py"

@@ -52,11 +52,16 @@ across distinct kernels and filesystems is not claimed until a separate
 two-environment reproducibility gate records it.
 
 The browser installer fixes its process umask at `0022` and removes
-group/other-write bits from cached browser trees before hashing them. This keeps
-the complete content-and-mode digest independent of the caller's shell umask
-while retaining executable-mode validation. A different file, link target,
+group/other-write bits from cached browser trees before hashing them. The
+immutable-tree policy excludes only Playwright's host-dependent validation and
+completion markers plus Firefox's runtime `.parentlock` and update directory;
+the completion marker is checked separately before any receipt is written.
+This keeps the complete browser-payload content-and-mode digest independent of
+the caller's shell umask, installed host libraries, and prior smoke runs while
+retaining executable-mode validation. A different payload file, link target,
 directory layout, executable bit, or remaining permission change still fails
-closed, and a mismatch reports both expected and observed values.
+closed, and a mismatch reports both expected and observed values. The exact
+exclusion policy is itself pinned in the toolchain and copied into the receipt.
 
 Run the native Linux regression lane independently:
 

@@ -71,30 +71,41 @@
       "firefox",
       "webkit"
     ],
+    "linux_x86_64_tree_policy": {
+      "schema": "mterrain-browser-immutable-tree-policy-v1",
+      "excluded_exact": [
+        "DEPENDENCIES_VALIDATED",
+        "INSTALLATION_COMPLETE",
+        "firefox/.parentlock"
+      ],
+      "excluded_prefixes": [
+        "firefox/updates"
+      ]
+    },
     "linux_x86_64_installations": {
       "chromium": {
         "directories": 12,
-        "regular_files": 305,
+        "regular_files": 303,
         "revision": "1234",
         "symlinks": 0,
         "total_file_bytes": 406847046,
-        "tree_sha256": "77a62dc0dae6a6a1300e60975c5055d16873825ec212c55616c5c0a8b8b54f37"
+        "tree_sha256": "339f22bc2437a26f54eafacc61982b096ca0d8f3e7f40eb8f4caf57a911ac787"
       },
       "firefox": {
-        "directories": 16,
-        "regular_files": 51,
+        "directories": 13,
+        "regular_files": 48,
         "revision": "1538",
         "symlinks": 0,
         "total_file_bytes": 315627774,
-        "tree_sha256": "9b8288e65576246334ea923a23c05cf5d5c6c88f3fe28cab7378a6a37c6f9337"
+        "tree_sha256": "4d188db4d7f3b26bb456bbf320c14bbcabe489724464f42444ebab0bc9329d80"
       },
       "webkit": {
         "directories": 11,
-        "regular_files": 37,
+        "regular_files": 36,
         "revision": "2336",
         "symlinks": 18,
         "total_file_bytes": 306401261,
-        "tree_sha256": "0d6b3b538495c6b530a1b2e48c537f81eb316a286eaa5359a9d5e3adff538a9e"
+        "tree_sha256": "0f01b0fcfb00cd1bd90e1938f60456d80b196f11a1e639e8d09bbb4fa3f0c2c6"
       }
     }
   }

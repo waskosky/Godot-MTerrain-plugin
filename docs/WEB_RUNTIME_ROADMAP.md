@@ -16,8 +16,10 @@
   workflows now run on the maintained `integration/next` review feed as well as
   `master`; the first feed run passed clean Web builds and native regressions,
   then exposed caller-umask drift in the browser-tree permission digest before
-  browser export; canonical `0022` installation modes and diagnostic mismatch
-  values are implemented for the rerun; representative hardware, calibration,
+  browser export; the next run passed Chromium's corrected pin and exposed
+  Playwright's host-only dependency marker in Firefox; canonical `0022` modes,
+  an explicit immutable-payload tree policy, and diagnostic mismatch values are
+  implemented for the next rerun; representative hardware, calibration,
   physical-mobile, and actual rollback evidence remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
@@ -170,8 +172,11 @@ The implemented local release-candidate slice now includes:
 - Godot 4.7's exact source commit and Playwright 1.62.0 wheel/browser inputs are
   pinned, including full Linux installation-tree digests rather than
   launcher-only hashes. Browser installation uses a fixed `0022` umask and
-  removes group/other-write bits before hashing, preserving executable-mode
-  coverage without making the receipt depend on a developer shell's umask. A
+  removes group/other-write bits before hashing. The pinned immutable-tree
+  policy omits only Playwright host/completion markers and Firefox lock/update
+  state, while checking installation completion separately. It preserves full
+  shipped-payload and executable-mode coverage without making the receipt depend
+  on a developer shell, installed system libraries, or a prior smoke run. A
   repository builder emits immutable template/browser receipts. Hosted CI now
   builds the no-thread dlink template before exporting
   and probing both profiles in headed Chromium and Firefox under a virtual

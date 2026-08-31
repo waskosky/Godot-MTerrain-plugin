@@ -14,6 +14,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "tools" / "ci_toolchain.json"
+BROWSER_TREE_POLICY = {
+    "schema": "mterrain-browser-immutable-tree-policy-v1",
+    "excluded_exact": [
+        "DEPENDENCIES_VALIDATED",
+        "INSTALLATION_COMPLETE",
+        "firefox/.parentlock",
+    ],
+    "excluded_prefixes": ["firefox/updates"],
+}
 
 
 def sha256(path: Path) -> str:
@@ -22,6 +31,15 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def excluded_browser_tree_entry(relative: str) -> bool:
+    if relative in BROWSER_TREE_POLICY["excluded_exact"]:
+        return True
+    return any(
+        relative == prefix or relative.startswith(f"{prefix}/")
+        for prefix in BROWSER_TREE_POLICY["excluded_prefixes"]
+    )
 
 
 def installation_tree(root: Path) -> dict[str, int | str]:
@@ -33,6 +51,8 @@ def installation_tree(root: Path) -> dict[str, int | str]:
     entries = sorted(root.rglob("*"), key=lambda value: value.relative_to(root).as_posix())
     for entry in entries:
         relative = entry.relative_to(root).as_posix()
+        if excluded_browser_tree_entry(relative):
+            continue
         metadata = entry.lstat()
         mode = stat.S_IMODE(metadata.st_mode)
         if stat.S_ISDIR(metadata.st_mode):
@@ -77,6 +97,8 @@ def main() -> int:
         raise SystemExit(f"Playwright browser directory is missing: {browsers_root}")
     configuration: dict[str, Any] = json.loads(CONFIG.read_text(encoding="utf-8"))
     expected = configuration["playwright"]
+    if expected.get("linux_x86_64_tree_policy") != BROWSER_TREE_POLICY:
+        raise SystemExit("Pinned Linux browser-tree policy is missing or inconsistent")
     actual_version = importlib.metadata.version("playwright")
     if actual_version != expected["version"]:
         raise SystemExit(
@@ -112,6 +134,9 @@ def main() -> int:
     for name in expected["browsers"]:
         revision = selected_revisions[name]["revision"]
         installation = browsers_root / f"{name}-{revision}"
+        completion_marker = installation / "INSTALLATION_COMPLETE"
+        if not completion_marker.is_file() or completion_marker.stat().st_size != 0:
+            raise SystemExit(f"Pinned {name} browser installation is incomplete")
         candidates = sorted(installation.rglob(executable_names[name]))
         candidates = [
             candidate
@@ -158,6 +183,7 @@ def main() -> int:
             "version": actual_version,
             "wheels": expected["wheels"],
             "browser_revisions": selected_revisions,
+            "installation_tree_policy": BROWSER_TREE_POLICY,
             "browsers": records,
         },
     }
