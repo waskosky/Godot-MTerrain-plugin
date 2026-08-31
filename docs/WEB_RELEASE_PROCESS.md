@@ -208,7 +208,13 @@ loads and checks the packaged companion.
 eight-region visual and one-region collision ceiling. It records startup,
 first-tile/collision, frame percentiles, longest frame, recovery, region/memory
 maxima, the runtime's exact ten closed per-phase timing counters, and a separate
-longest scheduler-step budget. Export it with
+longest scheduler-step budget. Under `web_extended`, every stop also replaces a
+bounded foliage projection, two joined supplied navigation regions, a baked path
+with one pre-baked collision shape, and a two-level HLOD projection. That lane
+cycles all three foliage tiers, budgets instance/apply work independently,
+requires joined path queries and path-collision rays, records companion maxima
+and timings, and must recover to zero extended ownership. All fixture assets and
+their import metadata are candidate-shipped and capture-bound. Export it with
 `--fixture performance` with the exact debug build and template receipts:
 
 ```sh
@@ -222,6 +228,11 @@ python3 scripts/export_web_smoke.py \
   --bundle-root /verified/web_core \
   --native-library /matching/native/libMTerrain.so
 ```
+
+`run_web_performance.py` uses a 360-second harness watchdog so slow software
+diagnostics still produce a failing budget report instead of losing their
+bounded-state result. The watchdog is not a performance threshold and cannot
+turn software-rendered evidence into a passing release lane.
 
 The exported page provides a **Download MTerrain evidence** button so actual
 Safari and physical Android/iOS browsers can produce bounded capture JSON

@@ -96,24 +96,59 @@
         "class": "MTerrainWebExtendedRuntime",
         "hard_limits": {
           "maximum_allowed_resource_paths": 256,
+          "maximum_foliage_projection_area_m2": 16777216,
           "maximum_foliage_instances": 8192,
+          "maximum_hlod_cross_fade_steps": 16,
           "maximum_hlod_levels": 4,
           "maximum_installed_per_capability": 128,
           "maximum_mesh_indices": 262144,
           "maximum_mesh_vertices": 65536,
           "maximum_navigation_indices": 65536,
+          "maximum_navigation_agent_height_m": 1000,
+          "maximum_navigation_agent_radius_m": 1000,
+          "maximum_navigation_agent_slope_degrees": 90,
           "maximum_navigation_polygons": 8192,
           "maximum_navigation_vertices": 8192,
+          "maximum_path_collision_extent_m": 10000,
+          "maximum_path_collision_projections": 64,
+          "maximum_path_collision_shapes_per_projection": 1,
+          "maximum_path_collision_vertices": 65536,
           "maximum_pending_work": 128,
           "maximum_result_receipts": 256
         },
+        "foliage_quality_tiers": {
+          "high": {
+            "maximum_density_per_square_m": 2.0,
+            "maximum_instances": 2048
+          },
+          "low": {
+            "maximum_density_per_square_m": 0.25,
+            "maximum_instances": 256
+          },
+          "medium": {
+            "maximum_density_per_square_m": 1.0,
+            "maximum_instances": 1024
+          }
+        },
         "path": "runtime/web_extended_runtime.gd",
+        "path_collision_shapes": [
+          "box",
+          "capsule",
+          "concave_polygon",
+          "convex_polygon",
+          "cylinder"
+        ],
         "required_capabilities": {
           "api_stability": "experimental",
+          "bounded_foliage_quality_tiers": true,
           "foliage": true,
+          "hlod_cross_fade": true,
           "mesh_hlod": true,
           "navigation": true,
+          "navigation_agent_profiles": true,
+          "path_collision": true,
           "paths": true,
+          "prebaked_path_collision": true,
           "single_threaded": true
         },
         "required_methods": [
@@ -132,10 +167,10 @@
         "state_contract": "mterrain-web-extended-runtime-state/v1",
         "unsupported_capabilities": {
           "foliage_collision": false,
-          "path_collision": false,
           "runtime_curve_deformation": false,
           "runtime_mesh_generation": false,
-          "runtime_navigation_baking": false
+          "runtime_navigation_baking": false,
+          "runtime_path_collision_generation": false
         }
       },
       "expected_build_profile": "web_extended",

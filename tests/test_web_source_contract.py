@@ -36,6 +36,22 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertEqual(
             contract["profiles"]["web_extended"]["inherits"], "web_core"
         )
+        companion = contract["profiles"]["web_extended"]["companion"]
+        self.assertTrue(companion["required_capabilities"]["path_collision"])
+        self.assertTrue(
+            companion["required_capabilities"]["prebaked_path_collision"]
+        )
+        self.assertFalse(
+            companion["unsupported_capabilities"][
+                "runtime_path_collision_generation"
+            ]
+        )
+        self.assertEqual(
+            companion["hard_limits"]["maximum_hlod_cross_fade_steps"], 16
+        )
+        self.assertEqual(
+            companion["hard_limits"]["maximum_path_collision_projections"], 64
+        )
 
     def test_web_governance_docs_remain_standalone(self) -> None:
         for relative in (
@@ -532,6 +548,12 @@ class WebSourceContractTests(unittest.TestCase):
         )
         for limits in budgets["profiles"].values():
             self.assertGreater(limits["maximum_compressed_runtime_export_bytes"], 0)
+            self.assertEqual(limits["maximum_extended_foliage_instances"], 256)
+            self.assertEqual(limits["maximum_extended_resident_projections"], 5)
+        extended_fixture = budgets["fixture"]["extended_runtime"]
+        self.assertEqual(extended_fixture["expected_completed_projections"], 1280)
+        self.assertEqual(extended_fixture["expected_navigation_queries"], 4)
+        self.assertEqual(extended_fixture["expected_hlod_transition_steps"], 1024)
         self.assertEqual(gate["schema"], "mterrain-web-release-gate-v1")
         self.assertEqual(
             set(gate["hosted_correctness"]["browsers"]),
@@ -659,6 +681,17 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn("_awaiting_collision", performance)
         self.assertIn("_request_current_collision", performance)
         self.assertIn('"runtime_profile": _runtime_profile', performance)
+        self.assertIn("EXTENDED_HLOD_FADE_STEPS := 4", performance)
+        self.assertIn('"extended_runtime": extended_payload', performance)
+        self.assertIn("_advance_extended_query", performance)
+        self.assertIn('"prebaked_path_collision"', performance)
+        performance_runner = (
+            ROOT / "scripts" / "run_web_performance.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'parser.add_argument("--timeout", type=float, default=360.0)',
+            performance_runner,
+        )
         exporter = (
             ROOT / "scripts" / "export_web_smoke.py"
         ).read_text(encoding="utf-8")
@@ -714,6 +747,7 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn("runtime_export_payload_valid", evidence_common)
         self.assertIn("SCHEDULER_PHASES", evidence_common)
         self.assertIn("scheduler_metrics_valid", evidence_common)
+        self.assertIn("extended_runtime_measurements", evidence_common)
 
     def test_lod_edge_meshes_cover_every_boolean_combination(self) -> None:
         configuration = (ROOT / "gdextension" / "src" / "mconfig.h").read_text(
@@ -896,17 +930,26 @@ class WebSourceContractTests(unittest.TestCase):
             self.assertIn(f"func {method}", runtime)
         self.assertIn('"runtime_navigation_baking": false', runtime)
         self.assertIn('"runtime_curve_deformation": false', runtime)
+        self.assertIn('"runtime_path_collision_generation": false', runtime)
+        self.assertIn('"prebaked_path_collision": true', runtime)
+        self.assertIn('"bounded_foliage_quality_tiers": true', runtime)
+        self.assertIn('"navigation_agent_profiles": true', runtime)
         self.assertIn('"allow_in_memory_resources": false', runtime)
         self.assertIn("MAX_FOLIAGE_LIMIT := 8192", runtime)
         self.assertIn("MAX_MESH_INDICES := 262144", runtime)
         self.assertIn("MAX_NAVIGATION_INDICES := 65536", runtime)
         self.assertIn("MAX_HLOD_LEVELS := 4", runtime)
+        self.assertIn("MAX_HLOD_CROSS_FADE_STEPS := 16", runtime)
+        self.assertIn("MAX_PATH_COLLISION_PROJECTIONS := 64", runtime)
+        self.assertIn("FOLIAGE_QUALITY_TIERS", runtime)
         self.assertIn("MAX_ALLOWED_RESOURCE_PATHS := 256", runtime)
         self.assertIn("MAX_RESULT_RECEIPTS := 256", runtime)
         self.assertIn("hlod_total_vertex_limit", runtime)
         self.assertIn("hlod_total_index_limit", runtime)
         self.assertIn("navigation_index_out_of_bounds", runtime)
         self.assertIn("hlod_hysteresis_m", runtime)
+        self.assertIn("hlod_cross_fade_steps", runtime)
+        self.assertIn("path_collision_policy_in_use", runtime)
         self.assertIn("installed_projection_limit", runtime)
         self.assertIn("resource_policy_in_use", runtime)
         self.assertIn("work_key_conflict", runtime)
@@ -915,6 +958,7 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertNotIn("Thread.new", runtime)
         self.assertNotIn("bake_from_source_geometry_data", runtime)
         self.assertIn("NavigationServer3D.map_get_path", smoke)
+        self.assertIn("PhysicsRayQueryParameters3D", smoke)
         self.assertIn("MTERRAIN_WEB_EXTENDED_SMOKE_OK", smoke)
 
     def test_extended_export_fixtures_include_their_source_resources(self) -> None:
@@ -925,11 +969,13 @@ class WebSourceContractTests(unittest.TestCase):
             "road_strip.obj",
             "rock_near.obj",
             "rock_far.obj",
+            "road_collision.tres",
         ):
             source = ROOT / "tests" / "web_smoke" / "fixtures" / fixture
-            import_metadata = source.with_suffix(source.suffix + ".import")
             self.assertTrue(source.is_file(), fixture)
-            self.assertTrue(import_metadata.is_file(), import_metadata.name)
+            if source.suffix == ".obj":
+                import_metadata = source.with_suffix(source.suffix + ".import")
+                self.assertTrue(import_metadata.is_file(), import_metadata.name)
 
 
 if __name__ == "__main__":

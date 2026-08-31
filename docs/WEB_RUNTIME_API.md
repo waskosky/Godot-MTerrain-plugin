@@ -299,6 +299,13 @@ accepted by the projection methods.
 | `max_navigation_polygons` | 4,096 | 8,192 |
 | `max_navigation_indices` | 32,768 | 65,536 |
 | `hlod_hysteresis_m` | 2.0 | finite 0–10,000 |
+| `hlod_cross_fade_steps` | 0 (immediate) | 16 |
+| `allow_path_collision` | `false` | explicit boolean opt-in |
+| `max_path_collision_projections` | 8 | 64 |
+| `max_path_collision_vertices` | 8,192 | 65,536 |
+| `max_path_collision_extent_m` | 4,096 | finite positive 10,000 |
+| `path_collision_layer` | 1 | unsigned 32-bit mask |
+| `path_collision_mask` | 1 | unsigned 32-bit mask |
 
 `configure_limits()` rejects unknown keys and cannot run while work is pending.
 It cannot shrink below installed data, and resource allowlist/in-memory policy
@@ -307,14 +314,22 @@ across extended capabilities, revisions are monotonic, and priority uses the
 same -1000–1000 range as terrain work. An equal revision is idempotent; each
 displaced revision retains a `coalesced` receipt. Installed-key capacity is
 reserved at queue time and fails closed instead of silently evicting another key.
+Installed pre-baked collision also locks its enable/layer/mask policy, and
+installed HLOD locks its fade-step policy, until those projections are released.
 
 ### Foliage
 
-`queue_foliage(work_key, revision, priority, mesh, transforms, material=null)`
+`queue_foliage(work_key, revision, priority, mesh, transforms, material=null,
+quality_tier=&"custom", projection_area_m2=0.0)`
 accepts a bounded mesh (1–16 surfaces), finite `Transform3D` values, and an
 optional allowed material. It creates a staged `MultiMesh`, writes at most
 `max_instance_ops` transforms per `step_runtime_work()`, and retains the previous
-projection until installation. Foliage collision is not supported.
+projection until installation. Named quality tiers add immutable per-projection
+instance and density ceilings: low is 256 and 0.25/m², medium is 1,024 and
+1.0/m², and high is 2,048 and 2.0/m². Named tiers require a finite positive
+area no larger than 16,777,216 m². `custom` preserves the API v1 compatibility
+path and remains bounded by `max_foliage_instances`. Foliage collision is not
+supported.
 
 ### Navigation
 
@@ -322,14 +337,22 @@ projection until installation. Foliage collision is not supported.
 transform=Transform3D.IDENTITY)` installs already baked `NavigationMesh` data
 after vertex/polygon/resource/transform validation. It never calls runtime
 navigation baking. Validation includes finite vertices, polygon cardinality,
-total polygon indices, and index bounds. The native smoke installs the region and
-requires an actual `NavigationServer3D` path query, not only node creation.
+total polygon indices, index bounds, and finite bounded agent radius, height,
+and maximum slope metadata. Native and exported fixtures install two adjacent
+regions and require an actual `NavigationServer3D` query across their join, not
+only node creation.
 
 ### Paths
 
 `queue_path(work_key, revision, priority, baked_mesh,
-transform=Transform3D.IDENTITY, material=null)` installs an already baked mesh.
-It does not receive a curve, deform vertices, cut terrain, or generate collision.
+transform=Transform3D.IDENTITY, material=null, collision_shape=null)` installs
+an already baked mesh. When `allow_path_collision=true`, one separately authored,
+allowlisted `BoxShape3D`, `CapsuleShape3D`, `CylinderShape3D`,
+`ConvexPolygonShape3D`, or `ConcavePolygonShape3D` may be installed under the
+projection-count, point-count, extent, layer, and mask limits. The entire shape
+is validated before the visual/collision node is staged. The runtime does not
+receive a curve, deform vertices, cut terrain, or generate collision; generated
+road/river collision remains unsupported.
 
 ### Mesh HLOD
 
@@ -339,7 +362,11 @@ Distances are finite, non-negative, strictly increasing, and correspond to the
 maximum focus distance for each level. Both each mesh and the sum of all level
 vertices/indices must fit their limits. One call changes at most one installed
 HLOD projection, retaining the last complete mesh between calls. Transitions use
-`hlod_hysteresis_m` around each outward threshold to avoid boundary thrash.
+`hlod_hysteresis_m` around each outward threshold to avoid boundary thrash. A
+nonzero `hlod_cross_fade_steps` stages a second mesh instance and advances at
+most one fade step per apply operation. A changed desired level cancels the
+in-flight fade in one bounded operation; zero keeps the API v1 immediate-swap
+behavior.
 
 ### Extended stepping and ownership
 
@@ -357,14 +384,20 @@ retaining the older installed projection; wildcard release retires both. At most
 256 recent results are retained. State reports pending cursors, sorted installed
 key/revision/LOD records, per-capability vertex/index/polygon/instance counts,
 queue/cancel/coalesce/release metrics, foliage transform writes, HLOD swaps, and
-longest step time. The caller owns when a terrain tile's dependent foliage,
+longest step time. It also reports tiered foliage ownership, navigation agent
+profiles, path collision shapes/vertices, and HLOD fade target/progress plus
+start/step/cancellation metrics. The caller owns when a terrain tile's dependent foliage,
 navigation, path, or HLOD projection is released; the companion deliberately
 does not infer a second spatial grid.
 
 ## Release status
 
 Native and local headed virtual-display Chromium/Firefox fixtures validate these
-contracts. Pinned Playwright WebKit reaches the runtime marker and a nonblank
+contracts. A local software-rendered 256-stop extended diagnostic additionally
+completed moving 1/2/1/1 foliage/navigation/path/HLOD ownership with all three
+foliage tiers, joined navigation queries, pre-baked collision rays, bounded
+cross-fades, and zero final residency. Its hardware frame/startup thresholds did
+not pass and it is not release evidence. Pinned Playwright WebKit reaches the runtime marker and a nonblank
 frame but currently fails the strict WebGL error gate, so it remains diagnostic
 and is not Safari evidence. These runs are correctness evidence, not
 representative hardware or physical-mobile performance evidence. See

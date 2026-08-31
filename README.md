@@ -12,10 +12,12 @@ near-focus collision kept aligned across later edits, and constrained
 texture-optional materials. It also reports ten closed timing phases and bounded
 visual-LOD transition state, rejects mismatched shared tile edges atomically,
 and covers maximum LOD plus negative-offset destroy/recreate recovery. The opt-in
-`web_extended` package adds bounded data-first foliage, precomputed navigation,
-baked-path, and hysteretic mesh-HLOD projections without linking the native
-authoring subsystems. Its fixtures include exported grass/road/rock/navigation
-resources, moving revisions, and a real navigation path query. The
+`web_extended` package adds quality-tiered data-first foliage, precomputed
+joined-region navigation, baked paths with opt-in pre-baked collision shapes,
+and hysteretic, optionally cross-faded mesh-HLOD projections without linking
+the native authoring subsystems. Its fixtures include exported
+grass/road/rock/navigation resources, moving revisions, real joined navigation
+queries, and bounded collision rays. The
 `web-runtime-v0.1.0-rc.2` review candidate adds clean-clone debug/release builds,
 native regressions, immutable profile bundles and receipts, and an index-bound
 machine-readable runtime contract alongside the published
@@ -146,7 +148,9 @@ Godot templates and browser tooling. `runtime/web_extended_runtime.gd` is
 packaged only for `web_extended`; its accepted resources are `res://` assets
 subject to an explicit allowlist, or in-memory resources only when the project
 deliberately enables that policy. It does not bake navigation, deform curves,
-generate runtime meshes, or create foliage/path collision. Mesh and navigation
+generate runtime meshes, create foliage collision, or generate path collision.
+One allowlisted pre-baked path shape per projection is available only after an
+explicit bounded opt-in. Mesh and navigation
 vertex/index ownership, cancellation, replacement, and HLOD focus changes are
 explicitly bounded. See the roadmap for the exact acceptance ladder.
 

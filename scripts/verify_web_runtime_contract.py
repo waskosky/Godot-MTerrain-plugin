@@ -311,6 +311,21 @@ def verify() -> str:
         "maximum_navigation_polygons": "MAX_NAVIGATION_POLYGONS",
         "maximum_navigation_indices": "MAX_NAVIGATION_INDICES",
         "maximum_hlod_levels": "MAX_HLOD_LEVELS",
+        "maximum_hlod_cross_fade_steps": "MAX_HLOD_CROSS_FADE_STEPS",
+        "maximum_path_collision_projections": "MAX_PATH_COLLISION_PROJECTIONS",
+        "maximum_path_collision_vertices": "MAX_PATH_COLLISION_VERTICES",
+        "maximum_path_collision_extent_m": "MAX_PATH_COLLISION_EXTENT_M",
+        "maximum_path_collision_shapes_per_projection": (
+            "MAX_PATH_COLLISION_SHAPES_PER_PROJECTION"
+        ),
+        "maximum_foliage_projection_area_m2": (
+            "MAX_FOLIAGE_PROJECTION_AREA_M2"
+        ),
+        "maximum_navigation_agent_radius_m": "MAX_NAVIGATION_AGENT_RADIUS_M",
+        "maximum_navigation_agent_height_m": "MAX_NAVIGATION_AGENT_HEIGHT_M",
+        "maximum_navigation_agent_slope_degrees": (
+            "MAX_NAVIGATION_AGENT_SLOPE_DEGREES"
+        ),
         "maximum_allowed_resource_paths": "MAX_ALLOWED_RESOURCE_PATHS",
         "maximum_result_receipts": "MAX_RESULT_RECEIPTS",
     }
@@ -322,6 +337,51 @@ def verify() -> str:
         fail("extended installed-projection limit drift")
     if "max_installed_per_capability) > 128" not in companion_source:
         fail("extended installed-projection enforcement drift")
+
+    expected_quality_tiers = {
+        "high": {
+            "maximum_density_per_square_m": 2.0,
+            "maximum_instances": 2048,
+        },
+        "low": {
+            "maximum_density_per_square_m": 0.25,
+            "maximum_instances": 256,
+        },
+        "medium": {
+            "maximum_density_per_square_m": 1.0,
+            "maximum_instances": 1024,
+        },
+    }
+    if companion.get("foliage_quality_tiers") != expected_quality_tiers:
+        fail("extended foliage quality-tier contract drift")
+    for name, tier in expected_quality_tiers.items():
+        if (
+            f'&"{name}": {{' not in companion_source
+            or f'"maximum_instances": {tier["maximum_instances"]}'
+            not in companion_source
+            or f'"maximum_density_per_square_m": '
+            f'{tier["maximum_density_per_square_m"]}' not in companion_source
+        ):
+            fail(f"extended foliage quality-tier implementation drift for {name}")
+    expected_collision_shapes = [
+        "box",
+        "capsule",
+        "concave_polygon",
+        "convex_polygon",
+        "cylinder",
+    ]
+    if companion.get("path_collision_shapes") != expected_collision_shapes:
+        fail("extended path-collision shape contract drift")
+    shape_markers = {
+        "box": "shape is BoxShape3D",
+        "capsule": "shape is CapsuleShape3D",
+        "concave_polygon": "shape is ConcavePolygonShape3D",
+        "convex_polygon": "shape is ConvexPolygonShape3D",
+        "cylinder": "shape is CylinderShape3D",
+    }
+    for shape_name in expected_collision_shapes:
+        if shape_markers[shape_name] not in companion_source:
+            fail(f"extended path-collision implementation drift for {shape_name}")
 
     for key, value in require_mapping(
         extended.get("native_required_capabilities"),

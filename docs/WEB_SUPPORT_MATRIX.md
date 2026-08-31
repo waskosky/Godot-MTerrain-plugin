@@ -16,10 +16,10 @@ every native runtime subsystem works in browsers.
 | Shared-edge mismatch rejection | Yes | Yes | Atomic validation before mutation |
 | Near-focus heightfield collision | Yes | Yes | Main-thread, independently budgeted |
 | Texture-optional Compatibility material | Yes | Yes | At most four samples from 16 layers |
-| Bounded MultiMesh foliage | No | Yes | Supplied mesh, no foliage collision |
-| Supplied/precomputed navigation | No | Yes | Path queries yes; runtime baking no |
-| Baked mesh paths | No | Yes | No runtime deformation or collision |
-| Mesh HLOD | No | Yes | One to four supplied levels, hysteretic |
+| Bounded MultiMesh foliage | No | Yes | Supplied mesh; low/medium/high density ceilings; no foliage collision |
+| Supplied/precomputed navigation | No | Yes | Agent-profile validation and joined-region queries; runtime baking no |
+| Baked mesh paths | No | Yes | Opt-in bounded pre-baked shapes; no deformation or collision generation |
+| Mesh HLOD | No | Yes | One to four supplied levels, hysteresis, optional bounded cross-fade |
 | Native editor/sculpt/import tools | No | No | Native-only authoring surface |
 
 Both profiles require Godot 4.7 stable, WebGL2, the Compatibility renderer, a
@@ -49,6 +49,12 @@ terrain offsets, destroy/recreate recovery, a teleport sequence, closed phase
 timings, and direct framebuffer readback. The extended fixture additionally
 uses exported foliage/road/HLOD/navigation resources and performs an actual
 navigation path query.
+The current 256-stop extended diagnostic moves all four projections at every
+stop, caps ownership at 1/2/1/1, exercises all foliage tiers, makes four joined
+navigation queries and four pre-baked collision rays, completes 256 four-step
+HLOD fades, and returns to zero ownership. It completed under software WebGL,
+but its frame/startup budgets failed; only its correctness and bounded-state
+results are local diagnostic evidence.
 The separate whole-bundle rollback fixture also passes locally in headed
 Chromium 151 and Firefox 153 for both profiles, including bounded collision and
 zero-residency eviction recovery. Those fixture passes validate the harness;
@@ -89,8 +95,9 @@ desktop emulation or a user-agent string.
   Rollback verification independently loads both the candidate and prior release
   directories and matches both index/profile-bundle digests.
 - Foliage collision, runtime navigation baking, runtime curve deformation,
-  runtime mesh generation, path collision, caves, tunnels, and overhangs are not
-  part of this candidate.
+  runtime mesh generation, generated path collision, caves, tunnels, and
+  overhangs are not part of this candidate. Explicitly supplied pre-baked path
+  shapes are a separate opt-in `web_extended` capability.
 
 When a row changes, record the exact source tag, bundle digest, Godot template,
 browser version, OS, GPU renderer, viewport, fixture, profile, and whether the

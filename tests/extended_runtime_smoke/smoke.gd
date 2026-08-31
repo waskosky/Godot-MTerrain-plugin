@@ -20,11 +20,19 @@ func _run() -> void:
 			failures.append("extended runtime omitted %s" % capability)
 	if capabilities.get(&"runtime_navigation_baking") != false:
 		failures.append("extended runtime over-reported navigation baking")
+	if capabilities.get(&"prebaked_path_collision") != true \
+	or capabilities.get(&"runtime_path_collision_generation") != false \
+	or capabilities.get(&"hlod_cross_fade") != true \
+	or not (capabilities.get(&"foliage_quality_tiers", {}) as Dictionary).has("low"):
+		failures.append("extended runtime omitted its bounded maturation capabilities")
 
 	var configured: Dictionary = runtime.configure_limits({
 		"max_foliage_instances": 16,
 		"max_installed_per_capability": 4,
 		"max_mesh_vertices": 8,
+		"allow_path_collision": true,
+		"max_path_collision_projections": 2,
+		"hlod_cross_fade_steps": 3,
 		"allow_in_memory_resources": true,
 	})
 	if not bool(configured.get("ok", false)):
@@ -38,6 +46,8 @@ func _run() -> void:
 
 	var mesh := _triangle_mesh(1.0)
 	var farther_mesh := _triangle_mesh(2.0)
+	var road_collision := BoxShape3D.new()
+	road_collision.size = Vector3(4.0, 0.25, 4.0)
 	var locked_runtime: Node3D = runtime_script.new()
 	root.add_child(locked_runtime)
 	var locked_resource: Dictionary = locked_runtime.queue_path(
@@ -49,6 +59,21 @@ func _run() -> void:
 	if locked_resource.get("code") != "in_memory_resource_rejected":
 		failures.append("in-memory resources were not rejected by default")
 	locked_runtime.queue_free()
+	var collision_locked_runtime: Node3D = runtime_script.new()
+	root.add_child(collision_locked_runtime)
+	collision_locked_runtime.configure_limits({"allow_in_memory_resources": true})
+	var locked_collision: Dictionary = collision_locked_runtime.queue_path(
+		"locked-collision",
+		1,
+		0,
+		mesh,
+		Transform3D.IDENTITY,
+		null,
+		road_collision,
+	)
+	if locked_collision.get("code") != "path_collision_disabled":
+		failures.append("pre-baked path collision did not require explicit opt-in")
+	collision_locked_runtime.queue_free()
 	var transforms: Array = []
 	for index in 9:
 		transforms.append(Transform3D(Basis.IDENTITY, Vector3(float(index), 0.0, 0.0)))
@@ -58,6 +83,9 @@ func _run() -> void:
 		10,
 		mesh,
 		transforms,
+		null,
+		&"low",
+		64.0,
 	)
 	var foliage_v2: Dictionary = runtime.queue_foliage(
 		"grove",
@@ -65,6 +93,9 @@ func _run() -> void:
 		10,
 		mesh,
 		transforms,
+		null,
+		&"low",
+		64.0,
 	)
 	if not bool(foliage_v1.get("ok", false)) or not bool(foliage_v2.get("ok", false)):
 		failures.append("foliage queue failed")
@@ -86,6 +117,9 @@ func _run() -> void:
 		10,
 		mesh,
 		transforms,
+		null,
+		&"low",
+		64.0,
 	)
 	if idempotent_foliage.get("status") != "already_installed":
 		failures.append("equal installed foliage revision was not idempotent")
@@ -95,6 +129,9 @@ func _run() -> void:
 		10,
 		mesh,
 		transforms,
+		null,
+		&"low",
+		64.0,
 	)
 	if not bool(staged_foliage.get("ok", false)):
 		failures.append("installed foliage replacement did not stage")
@@ -114,9 +151,36 @@ func _run() -> void:
 		10,
 		mesh,
 		transforms,
+		null,
+		&"low",
+		64.0,
 	)
 	if stale_foliage.get("code") != "stale_revision":
 		failures.append("stale foliage revision was accepted")
+	var density_rejected: Dictionary = runtime.queue_foliage(
+		"dense-low-grove",
+		1,
+		0,
+		mesh,
+		transforms,
+		null,
+		&"low",
+		16.0,
+	)
+	if density_rejected.get("code") != "foliage_quality_limit":
+		failures.append("low foliage density tier accepted an oversized projection")
+	var tier_rejected: Dictionary = runtime.queue_foliage(
+		"unknown-tier-grove",
+		1,
+		0,
+		mesh,
+		transforms,
+		null,
+		&"ultra",
+		64.0,
+	)
+	if tier_rejected.get("code") != "invalid_foliage_quality_tier":
+		failures.append("unknown foliage quality tier was accepted")
 
 	var cancelled_transforms := transforms.duplicate(true)
 	cancelled_transforms.append(Transform3D.IDENTITY)
@@ -137,19 +201,38 @@ func _run() -> void:
 		failures.append("partially staged foliage did not cancel")
 
 	var navigation_mesh := NavigationMesh.new()
+	navigation_mesh.agent_radius = 0.4
+	navigation_mesh.agent_height = 1.8
+	navigation_mesh.agent_max_slope = 35.0
 	navigation_mesh.set_vertices(PackedVector3Array([
 		Vector3(0.0, 0.0, 0.0),
 		Vector3(4.0, 0.0, 0.0),
+		Vector3(4.0, 0.0, 4.0),
 		Vector3(0.0, 0.0, 4.0),
 	]))
-	navigation_mesh.add_polygon(PackedInt32Array([0, 2, 1]))
+	navigation_mesh.add_polygon(PackedInt32Array([0, 3, 2, 1]))
 	var nav_result: Dictionary = runtime.queue_navigation(
-		"walkable",
+		"walkable-left",
 		1,
 		8,
 		navigation_mesh,
 	)
-	var path_result: Dictionary = runtime.queue_path("road", 1, 7, mesh)
+	var nav_join_result: Dictionary = runtime.queue_navigation(
+		"walkable-right",
+		1,
+		8,
+		navigation_mesh,
+		Transform3D(Basis.IDENTITY, Vector3(4.0, 0.0, 0.0)),
+	)
+	var path_result: Dictionary = runtime.queue_path(
+		"road",
+		1,
+		7,
+		mesh,
+		Transform3D.IDENTITY,
+		null,
+		road_collision,
+	)
 	var invalid_navigation_mesh := NavigationMesh.new()
 	invalid_navigation_mesh.set_vertices(PackedVector3Array([
 		Vector3.ZERO,
@@ -181,12 +264,12 @@ func _run() -> void:
 	)
 	if oversized_hlod.get("code") != "hlod_total_vertex_limit":
 		failures.append("combined HLOD vertex ceiling was not enforced")
-	for result in [nav_result, path_result, hlod_result]:
+	for result in [nav_result, nav_join_result, path_result, hlod_result]:
 		if not bool(result.get("ok", false)):
 			failures.append("extended projection queue failed: %s" % JSON.stringify(result))
 	_drain(runtime, Vector3.ZERO, 4, 4)
 	state = runtime.get_runtime_state()
-	if int(state.installed_counts.navigation) != 1 \
+	if int(state.installed_counts.navigation) != 2 \
 	or int(state.installed_counts.paths) != 1 \
 	or int(state.installed_counts.mesh_hlod) != 1:
 		failures.append("one or more extended projections failed to install")
@@ -198,7 +281,7 @@ func _run() -> void:
 		navigation_path = NavigationServer3D.map_get_path(
 			navigation_map,
 			Vector3(0.25, 0.0, 0.25),
-			Vector3(2.5, 0.0, 0.5),
+			Vector3(7.5, 0.0, 0.5),
 			true,
 		)
 		if navigation_path.size() >= 2:
@@ -214,10 +297,25 @@ func _run() -> void:
 				),
 			]
 		)
-	if int(state.installed_indices.navigation) != 3 \
-	or int(state.installed_polygons.navigation) != 1 \
+	if int(state.installed_indices.navigation) != 8 \
+	or int(state.installed_polygons.navigation) != 2 \
+	or not is_equal_approx(
+		float(state.installed.navigation[0].navigation_agent_radius_m),
+		0.4,
+	) \
+	or not is_equal_approx(
+		float(state.installed.navigation[0].navigation_agent_max_slope_degrees),
+		35.0,
+	) \
+	or int(state.installed_collision_shapes.paths) != 1 \
 	or state.installed.mesh_hlod[0].lod_index != 0:
 		failures.append("extended installed-state accounting was incomplete")
+	await physics_frame
+	var collision_hit := runtime.get_world_3d().direct_space_state.intersect_ray(
+		PhysicsRayQueryParameters3D.create(Vector3(0.0, 2.0, 0.0), Vector3(0.0, -2.0, 0.0)),
+	)
+	if collision_hit.is_empty():
+		failures.append("pre-baked path collision was not installed into physics")
 	for key in ["cancel-path-a", "cancel-path-b", "cancel-path-c"]:
 		var queued_path: Dictionary = runtime.queue_path(key, 1, 0, mesh)
 		if not bool(queued_path.get("ok", false)):
@@ -242,15 +340,35 @@ func _run() -> void:
 		failures.append("non-finite HLOD focus was accepted")
 	runtime.step_runtime_work(1, 1, Vector3(500.0, 0.0, 0.0))
 	state = runtime.get_runtime_state()
-	if int(state.metrics.hlod_swaps) < 1:
-		failures.append("mesh HLOD did not respond to bounded focus update")
+	if not bool(state.installed.mesh_hlod[0].hlod_transition_active) \
+	or int(state.metrics.hlod_transition_starts) != 1 \
+	or int(state.metrics.hlod_swaps) != 0:
+		failures.append("mesh HLOD cross-fade did not start under one apply operation")
+	for _fade_step in 3:
+		runtime.step_runtime_work(1, 1, Vector3(500.0, 0.0, 0.0))
+	state = runtime.get_runtime_state()
+	if int(state.metrics.hlod_swaps) != 1 \
+	or int(state.metrics.hlod_transition_steps) != 3 \
+	or bool(state.installed.mesh_hlod[0].hlod_transition_active):
+		failures.append("mesh HLOD cross-fade did not finish inside its configured step bound")
 	var swaps_after_far := int(state.metrics.hlod_swaps)
 	runtime.step_runtime_work(1, 1, Vector3(11.0, 0.0, 0.0))
 	if int(runtime.get_runtime_state().metrics.hlod_swaps) != swaps_after_far:
 		failures.append("mesh HLOD ignored its transition hysteresis")
 	runtime.step_runtime_work(1, 1, Vector3(7.0, 0.0, 0.0))
+	for _fade_step in 3:
+		runtime.step_runtime_work(1, 1, Vector3(7.0, 0.0, 0.0))
 	if int(runtime.get_runtime_state().metrics.hlod_swaps) != swaps_after_far + 1:
 		failures.append("mesh HLOD did not return after clearing hysteresis")
+	var collision_policy_in_use: Dictionary = runtime.configure_limits({"allow_path_collision": false})
+	if collision_policy_in_use.get("code") != "path_collision_policy_in_use":
+		failures.append("installed path collision allowed its explicit policy to be disabled")
+	var collision_layer_in_use: Dictionary = runtime.configure_limits({"path_collision_layer": 2})
+	if collision_layer_in_use.get("code") != "path_collision_policy_in_use":
+		failures.append("installed path collision allowed its collision layer to drift")
+	var hlod_fade_in_use: Dictionary = runtime.configure_limits({"hlod_cross_fade_steps": 2})
+	if hlod_fade_in_use.get("code") != "hlod_transition_policy_in_use":
+		failures.append("installed HLOD allowed its fade policy to drift")
 
 	var oversized_transforms: Array = []
 	oversized_transforms.resize(17)
@@ -280,7 +398,8 @@ func _run() -> void:
 
 	for release in [
 		runtime.release_projection(&"foliage", "grove", 2),
-		runtime.release_projection(&"navigation", "walkable", 1),
+		runtime.release_projection(&"navigation", "walkable-left", 1),
+		runtime.release_projection(&"navigation", "walkable-right", 1),
 		runtime.release_projection(&"paths", "road", 1),
 		runtime.release_projection(&"mesh_hlod", "rocks", 1),
 	]:

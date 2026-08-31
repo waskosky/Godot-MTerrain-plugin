@@ -18,8 +18,31 @@ const MAX_NAVIGATION_VERTICES := 8192
 const MAX_NAVIGATION_POLYGONS := 8192
 const MAX_NAVIGATION_INDICES := 65536
 const MAX_HLOD_LEVELS := 4
+const MAX_HLOD_CROSS_FADE_STEPS := 16
+const MAX_PATH_COLLISION_PROJECTIONS := 64
+const MAX_PATH_COLLISION_VERTICES := 65536
+const MAX_PATH_COLLISION_EXTENT_M := 10000
+const MAX_PATH_COLLISION_SHAPES_PER_PROJECTION := 1
+const MAX_FOLIAGE_PROJECTION_AREA_M2 := 16777216
+const MAX_NAVIGATION_AGENT_RADIUS_M := 1000
+const MAX_NAVIGATION_AGENT_HEIGHT_M := 1000
+const MAX_NAVIGATION_AGENT_SLOPE_DEGREES := 90
 const MAX_ALLOWED_RESOURCE_PATHS := 256
 const MAX_RESULT_RECEIPTS := 256
+const FOLIAGE_QUALITY_TIERS := {
+	&"low": {
+		"maximum_instances": 256,
+		"maximum_density_per_square_m": 0.25,
+	},
+	&"medium": {
+		"maximum_instances": 1024,
+		"maximum_density_per_square_m": 1.0,
+	},
+	&"high": {
+		"maximum_instances": 2048,
+		"maximum_density_per_square_m": 2.0,
+	},
+}
 
 var _limits := {
 	"max_pending_work": 32,
@@ -31,6 +54,13 @@ var _limits := {
 	"max_navigation_polygons": 4096,
 	"max_navigation_indices": 32768,
 	"hlod_hysteresis_m": 2.0,
+	"hlod_cross_fade_steps": 0,
+	"allow_path_collision": false,
+	"max_path_collision_projections": 8,
+	"max_path_collision_vertices": 8192,
+	"max_path_collision_extent_m": 4096.0,
+	"path_collision_layer": 1,
+	"path_collision_mask": 1,
 	"allow_in_memory_resources": false,
 	"allowed_resource_paths": PackedStringArray(),
 }
@@ -51,6 +81,10 @@ var _metrics := {
 	"released": 0,
 	"foliage_instance_writes": 0,
 	"hlod_swaps": 0,
+	"hlod_transition_starts": 0,
+	"hlod_transition_steps": 0,
+	"hlod_transition_cancellations": 0,
+	"path_collision_installs": 0,
 	"steps": 0,
 	"longest_step_usec": 0,
 }
@@ -68,8 +102,18 @@ func get_runtime_capabilities() -> Dictionary:
 		"foliage_collision": false,
 		"runtime_navigation_baking": false,
 		"runtime_curve_deformation": false,
-		"path_collision": false,
+		"path_collision": true,
+		"prebaked_path_collision": true,
+		"runtime_path_collision_generation": false,
+		"maximum_path_collision_shapes_per_projection": (
+			MAX_PATH_COLLISION_SHAPES_PER_PROJECTION
+		),
 		"runtime_mesh_generation": false,
+		"bounded_foliage_quality_tiers": true,
+		"foliage_quality_tiers": _public_foliage_quality_tiers(),
+		"navigation_agent_profiles": true,
+		"hlod_cross_fade": true,
+		"maximum_hlod_cross_fade_steps": MAX_HLOD_CROSS_FADE_STEPS,
 		"maximum_hlod_levels": MAX_HLOD_LEVELS,
 		"limits": _public_limits(),
 	}
@@ -92,6 +136,11 @@ func configure_limits(configuration: Dictionary) -> Dictionary:
 		"max_navigation_vertices",
 		"max_navigation_polygons",
 		"max_navigation_indices",
+		"hlod_cross_fade_steps",
+		"max_path_collision_projections",
+		"max_path_collision_vertices",
+		"path_collision_layer",
+		"path_collision_mask",
 	]:
 		if not (candidate[integer_key] is int):
 			return _error("invalid_limit_type", "%s must be an integer." % integer_key)
@@ -100,6 +149,17 @@ func configure_limits(configuration: Dictionary) -> Dictionary:
 	or float(candidate.hlod_hysteresis_m) < 0.0 \
 	or float(candidate.hlod_hysteresis_m) > 10000.0:
 		return _error("invalid_hlod_hysteresis", "hlod_hysteresis_m must be finite and between 0 and 10000.")
+	if not (candidate.max_path_collision_extent_m is int \
+	or candidate.max_path_collision_extent_m is float) \
+	or not is_finite(float(candidate.max_path_collision_extent_m)) \
+	or float(candidate.max_path_collision_extent_m) <= 0.0 \
+	or float(candidate.max_path_collision_extent_m) > MAX_PATH_COLLISION_EXTENT_M:
+		return _error(
+			"invalid_path_collision_extent",
+			"max_path_collision_extent_m must be finite and between 0 and 10000.",
+		)
+	if not (candidate.allow_path_collision is bool):
+		return _error("invalid_path_collision_policy", "allow_path_collision must be a bool.")
 	if int(candidate.max_pending_work) < 1 or int(candidate.max_pending_work) > MAX_PENDING_LIMIT:
 		return _error("invalid_pending_limit", "max_pending_work must be between 1 and 128.")
 	if int(candidate.max_foliage_instances) < 1 \
@@ -123,6 +183,31 @@ func configure_limits(configuration: Dictionary) -> Dictionary:
 	if int(candidate.max_navigation_indices) < 3 \
 	or int(candidate.max_navigation_indices) > MAX_NAVIGATION_INDICES:
 		return _error("invalid_navigation_index_limit", "Navigation index limit is out of range.")
+	if int(candidate.hlod_cross_fade_steps) < 0 \
+	or int(candidate.hlod_cross_fade_steps) > MAX_HLOD_CROSS_FADE_STEPS:
+		return _error(
+			"invalid_hlod_cross_fade_steps",
+			"hlod_cross_fade_steps must be between 0 and 16.",
+		)
+	if int(candidate.max_path_collision_projections) < 1 \
+	or int(candidate.max_path_collision_projections) > MAX_PATH_COLLISION_PROJECTIONS:
+		return _error(
+			"invalid_path_collision_projection_limit",
+			"max_path_collision_projections must be between 1 and 64.",
+		)
+	if int(candidate.max_path_collision_vertices) < 8 \
+	or int(candidate.max_path_collision_vertices) > MAX_PATH_COLLISION_VERTICES:
+		return _error(
+			"invalid_path_collision_vertex_limit",
+			"max_path_collision_vertices must be between 8 and 65536.",
+		)
+	for collision_mask_key in [&"path_collision_layer", &"path_collision_mask"]:
+		if int(candidate[collision_mask_key]) < 0 \
+		or int(candidate[collision_mask_key]) > 0xffffffff:
+			return _error(
+				"invalid_path_collision_mask",
+				"Path collision layers and masks must be unsigned 32-bit values.",
+			)
 	if not (candidate.allowed_resource_paths is PackedStringArray):
 		return _error("invalid_resource_allowlist", "allowed_resource_paths must be a PackedStringArray.")
 	if not (candidate.allow_in_memory_resources is bool):
@@ -164,7 +249,9 @@ func queue_foliage(
 	priority: int,
 	mesh: Mesh,
 	transforms: Array,
-	material: Material = null
+	material: Material = null,
+	quality_tier: StringName = &"custom",
+	projection_area_m2: float = 0.0
 ) -> Dictionary:
 	var common := _validate_common(&"foliage", work_key, revision, priority)
 	if not common.ok or common.has("status"):
@@ -181,6 +268,13 @@ func queue_foliage(
 		return mesh_check
 	if transforms.is_empty() or transforms.size() > int(_limits.max_foliage_instances):
 		return _error("foliage_instance_limit", "Foliage transform count exceeds its configured bound.")
+	var quality_check := _validate_foliage_quality(
+		quality_tier,
+		projection_area_m2,
+		transforms.size(),
+	)
+	if not quality_check.ok:
+		return quality_check
 	for transform in transforms:
 		if not (transform is Transform3D) or not _finite_transform(transform):
 			return _error("invalid_foliage_transform", "Every foliage transform must be finite Transform3D data.")
@@ -201,6 +295,8 @@ func queue_foliage(
 		"cursor": 0,
 		"transforms": transforms.duplicate(true),
 		"projection": projection,
+		"quality_tier": quality_tier,
+		"projection_area_m2": projection_area_m2,
 		"vertex_count": int(mesh_check.vertex_count),
 		"index_count": int(mesh_check.index_count),
 	})
@@ -239,6 +335,11 @@ func queue_navigation(
 		"vertex_count": int(navigation_check.vertex_count),
 		"polygon_count": int(navigation_check.polygon_count),
 		"index_count": int(navigation_check.index_count),
+		"navigation_agent_radius_m": float(navigation_check.agent_radius_m),
+		"navigation_agent_height_m": float(navigation_check.agent_height_m),
+		"navigation_agent_max_slope_degrees": float(
+			navigation_check.agent_max_slope_degrees
+		),
 	})
 
 
@@ -248,7 +349,8 @@ func queue_path(
 	priority: int,
 	baked_mesh: Mesh,
 	transform: Transform3D = Transform3D.IDENTITY,
-	material: Material = null
+	material: Material = null,
+	collision_shape: Shape3D = null
 ) -> Dictionary:
 	var common := _validate_common(&"paths", work_key, revision, priority)
 	if not common.ok or common.has("status"):
@@ -265,11 +367,47 @@ func queue_path(
 		return mesh_check
 	if not _finite_transform(transform):
 		return _error("invalid_path_transform", "Path transform must be finite.")
-	var projection := MeshInstance3D.new()
+	var collision_check := {
+		"ok": true,
+		"code": "ok",
+		"vertex_count": 0,
+		"extent_m": 0.0,
+	}
+	if collision_shape != null:
+		if not bool(_limits.allow_path_collision):
+			return _error(
+				"path_collision_disabled",
+				"Pre-baked path collision requires explicit allow_path_collision opt-in.",
+			)
+		resource_check = _validate_resource(collision_shape, "path collision shape")
+		if not resource_check.ok:
+			return resource_check
+		collision_check = _validate_path_collision_shape(collision_shape)
+		if not collision_check.ok:
+			return collision_check
+		if _owned_path_collision_count(work_key) >= int(_limits.max_path_collision_projections):
+			return _error(
+				"path_collision_projection_limit",
+				"Pre-baked path collision ownership exceeds its configured bound.",
+			)
+	var projection := Node3D.new()
 	projection.name = _projection_name(&"paths", work_key)
-	projection.mesh = baked_mesh
-	projection.material_override = material
 	projection.transform = transform
+	var mesh_projection := MeshInstance3D.new()
+	mesh_projection.name = "Visual"
+	mesh_projection.mesh = baked_mesh
+	mesh_projection.material_override = material
+	projection.add_child(mesh_projection)
+	if collision_shape != null:
+		var body := StaticBody3D.new()
+		body.name = "PrebakedCollision"
+		body.collision_layer = int(_limits.path_collision_layer)
+		body.collision_mask = int(_limits.path_collision_mask)
+		var collision := CollisionShape3D.new()
+		collision.name = "Shape"
+		collision.shape = collision_shape
+		body.add_child(collision)
+		projection.add_child(body)
 	return _enqueue({
 		"capability": &"paths",
 		"work_key": work_key,
@@ -280,6 +418,10 @@ func queue_path(
 		"projection": projection,
 		"vertex_count": int(mesh_check.vertex_count),
 		"index_count": int(mesh_check.index_count),
+		"collision_shape_count": MAX_PATH_COLLISION_SHAPES_PER_PROJECTION \
+			if collision_shape != null else 0,
+		"collision_vertex_count": int(collision_check.vertex_count),
+		"collision_extent_m": float(collision_check.extent_m),
 	})
 
 
@@ -325,11 +467,20 @@ func queue_mesh_hlod(
 			return material_check
 	if not _finite_transform(transform):
 		return _error("invalid_hlod_transform", "HLOD transform must be finite.")
-	var projection := MeshInstance3D.new()
+	var projection := Node3D.new()
 	projection.name = _projection_name(&"mesh_hlod", work_key)
-	projection.mesh = meshes[0]
-	projection.material_override = material
 	projection.transform = transform
+	var active_projection := MeshInstance3D.new()
+	active_projection.name = "Active"
+	active_projection.mesh = meshes[0]
+	active_projection.material_override = material
+	projection.add_child(active_projection)
+	var incoming_projection := MeshInstance3D.new()
+	incoming_projection.name = "Incoming"
+	incoming_projection.material_override = material
+	incoming_projection.transparency = 1.0
+	incoming_projection.visible = false
+	projection.add_child(incoming_projection)
 	return _enqueue({
 		"capability": &"mesh_hlod",
 		"work_key": work_key,
@@ -341,6 +492,12 @@ func queue_mesh_hlod(
 		"meshes": meshes.duplicate(),
 		"distances": distances.duplicate(),
 		"lod_index": 0,
+		"target_lod_index": 0,
+		"fade_step": 0,
+		"fade_steps": int(_limits.hlod_cross_fade_steps),
+		"transition_active": false,
+		"active_projection": active_projection,
+		"incoming_projection": incoming_projection,
 		"vertex_count": total_vertices,
 		"index_count": total_indices,
 	})
@@ -487,6 +644,14 @@ func get_runtime_state() -> Dictionary:
 	var installed_indices := {}
 	var installed_instances := {}
 	var installed_polygons := {}
+	var installed_collision_shapes := {}
+	var installed_collision_vertices := {}
+	var installed_foliage_quality_tiers := {
+		&"low": 0,
+		&"medium": 0,
+		&"high": 0,
+		&"custom": 0,
+	}
 	var installed_records := {}
 	for capability in CAPABILITIES:
 		var installed_for_capability: Dictionary = _installed[capability]
@@ -495,13 +660,22 @@ func get_runtime_state() -> Dictionary:
 		var index_count := 0
 		var instance_count := 0
 		var polygon_count := 0
+		var collision_shape_count := 0
+		var collision_vertex_count := 0
 		var records: Array[Dictionary] = []
 		for record in installed_for_capability.values():
 			vertex_count += int(record.get("vertex_count", 0))
 			index_count += int(record.get("index_count", 0))
 			polygon_count += int(record.get("polygon_count", 0))
+			collision_shape_count += int(record.get("collision_shape_count", 0))
+			collision_vertex_count += int(record.get("collision_vertex_count", 0))
 			if capability == &"foliage":
 				instance_count += (record.transforms as Array).size()
+				var quality_tier := StringName(record.get("quality_tier", &"custom"))
+				installed_foliage_quality_tiers[quality_tier] = (
+					int(installed_foliage_quality_tiers.get(quality_tier, 0))
+					+ (record.transforms as Array).size()
+				)
 			records.append({
 				"work_key": record.work_key,
 				"revision": record.revision,
@@ -510,13 +684,32 @@ func get_runtime_state() -> Dictionary:
 				"polygon_count": int(record.get("polygon_count", 0)),
 				"instance_count": (record.transforms as Array).size() \
 					if capability == &"foliage" else 0,
+				"quality_tier": str(record.get("quality_tier", "")),
+				"projection_area_m2": float(record.get("projection_area_m2", 0.0)),
+				"collision_shape_count": int(record.get("collision_shape_count", 0)),
+				"collision_vertex_count": int(record.get("collision_vertex_count", 0)),
 				"lod_index": int(record.get("lod_index", -1)),
+				"target_lod_index": int(record.get("target_lod_index", -1)),
+				"hlod_transition_active": bool(record.get("transition_active", false)),
+				"hlod_fade_step": int(record.get("fade_step", 0)),
+				"hlod_fade_steps": int(record.get("fade_steps", 0)),
+				"navigation_agent_radius_m": float(
+					record.get("navigation_agent_radius_m", 0.0)
+				),
+				"navigation_agent_height_m": float(
+					record.get("navigation_agent_height_m", 0.0)
+				),
+				"navigation_agent_max_slope_degrees": float(
+					record.get("navigation_agent_max_slope_degrees", 0.0)
+				),
 			})
 		records.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.work_key) < str(b.work_key))
 		installed_vertices[capability] = vertex_count
 		installed_indices[capability] = index_count
 		installed_instances[capability] = instance_count
 		installed_polygons[capability] = polygon_count
+		installed_collision_shapes[capability] = collision_shape_count
+		installed_collision_vertices[capability] = collision_vertex_count
 		installed_records[capability] = records
 	var pending_state: Array[Dictionary] = []
 	for work in _pending:
@@ -537,6 +730,9 @@ func get_runtime_state() -> Dictionary:
 		"installed_indices": installed_indices,
 		"installed_instances": installed_instances,
 		"installed_polygons": installed_polygons,
+		"installed_collision_shapes": installed_collision_shapes,
+		"installed_collision_vertices": installed_collision_vertices,
+		"installed_foliage_quality_tiers": installed_foliage_quality_tiers,
 		"installed": installed_records,
 		"limits": _public_limits(),
 		"metrics": _metrics.duplicate(true),
@@ -641,6 +837,8 @@ func _install(work: Dictionary) -> void:
 		_dispose_projection(installed_for_capability[work.work_key].projection)
 	add_child(work.projection)
 	installed_for_capability[work.work_key] = work
+	if work.capability == &"paths" and int(work.get("collision_shape_count", 0)) > 0:
+		_metrics.path_collision_installs += 1
 
 
 func _step_one_hlod(focus_position: Vector3) -> bool:
@@ -649,14 +847,57 @@ func _step_one_hlod(focus_position: Vector3) -> bool:
 	keys.sort()
 	for key in keys:
 		var record: Dictionary = installed_hlod[key]
-		var projection: MeshInstance3D = record.projection
+		var active_projection: MeshInstance3D = record.active_projection
+		var incoming_projection: MeshInstance3D = record.incoming_projection
 		var next_index := _desired_hlod_index(record, focus_position)
+		if bool(record.transition_active):
+			if next_index != int(record.target_lod_index):
+				active_projection.transparency = 0.0
+				incoming_projection.visible = false
+				incoming_projection.mesh = null
+				incoming_projection.transparency = 1.0
+				record.transition_active = false
+				record.target_lod_index = record.lod_index
+				record.fade_step = 0
+				installed_hlod[key] = record
+				_metrics.hlod_transition_cancellations += 1
+				return true
+			var fade_steps: int = max(1, int(record.fade_steps))
+			var fade_step: int = min(fade_steps, int(record.fade_step) + 1)
+			var progress := float(fade_step) / float(fade_steps)
+			active_projection.transparency = progress
+			incoming_projection.transparency = 1.0 - progress
+			record.fade_step = fade_step
+			_metrics.hlod_transition_steps += 1
+			if fade_step >= fade_steps:
+				active_projection.mesh = incoming_projection.mesh
+				active_projection.transparency = 0.0
+				incoming_projection.visible = false
+				incoming_projection.mesh = null
+				incoming_projection.transparency = 1.0
+				record.lod_index = record.target_lod_index
+				record.transition_active = false
+				record.fade_step = 0
+				_metrics.hlod_swaps += 1
+			installed_hlod[key] = record
+			return true
 		if next_index == int(record.lod_index):
 			continue
-		projection.mesh = record.meshes[next_index]
-		record.lod_index = next_index
+		if int(record.fade_steps) <= 0:
+			active_projection.mesh = record.meshes[next_index]
+			record.lod_index = next_index
+			record.target_lod_index = next_index
+			installed_hlod[key] = record
+			_metrics.hlod_swaps += 1
+			return true
+		incoming_projection.mesh = record.meshes[next_index]
+		incoming_projection.transparency = 1.0
+		incoming_projection.visible = true
+		record.target_lod_index = next_index
+		record.transition_active = true
+		record.fade_step = 0
 		installed_hlod[key] = record
-		_metrics.hlod_swaps += 1
+		_metrics.hlod_transition_starts += 1
 		return true
 	return false
 
@@ -664,13 +905,14 @@ func _step_one_hlod(focus_position: Vector3) -> bool:
 func _hlod_needs_swap(focus_position: Vector3) -> bool:
 	var installed_hlod: Dictionary = _installed[&"mesh_hlod"]
 	for record in installed_hlod.values():
-		if _desired_hlod_index(record, focus_position) != int(record.lod_index):
+		if bool(record.get("transition_active", false)) \
+		or _desired_hlod_index(record, focus_position) != int(record.lod_index):
 			return true
 	return false
 
 
 func _desired_hlod_index(record: Dictionary, focus_position: Vector3) -> int:
-	var projection: MeshInstance3D = record.projection
+	var projection: Node3D = record.projection
 	var distance := projection.global_position.distance_to(focus_position)
 	var distances: PackedFloat32Array = record.distances
 	var next_index := int(record.lod_index)
@@ -726,13 +968,162 @@ func _validate_navigation_mesh(navigation_mesh: NavigationMesh) -> Dictionary:
 		for vertex_index in polygon:
 			if vertex_index < 0 or vertex_index >= vertices.size():
 				return _error("navigation_index_out_of_bounds", "Navigation polygon index is out of bounds.")
+	var agent_radius_m := float(navigation_mesh.agent_radius)
+	var agent_height_m := float(navigation_mesh.agent_height)
+	var agent_max_slope_degrees := float(navigation_mesh.agent_max_slope)
+	if not is_finite(agent_radius_m) \
+	or agent_radius_m < 0.0 \
+	or agent_radius_m > MAX_NAVIGATION_AGENT_RADIUS_M:
+		return _error(
+			"invalid_navigation_agent_radius",
+			"Navigation agent radius must be finite and between 0 and 1000 metres.",
+		)
+	if not is_finite(agent_height_m) \
+	or agent_height_m <= 0.0 \
+	or agent_height_m > MAX_NAVIGATION_AGENT_HEIGHT_M:
+		return _error(
+			"invalid_navigation_agent_height",
+			"Navigation agent height must be finite and between 0 and 1000 metres.",
+		)
+	if not is_finite(agent_max_slope_degrees) \
+	or agent_max_slope_degrees < 0.0 \
+	or agent_max_slope_degrees > MAX_NAVIGATION_AGENT_SLOPE_DEGREES:
+		return _error(
+			"invalid_navigation_agent_slope",
+			"Navigation agent maximum slope must be finite and between 0 and 90 degrees.",
+		)
 	return {
 		"ok": true,
 		"code": "ok",
 		"vertex_count": vertices.size(),
 		"polygon_count": polygon_count,
 		"index_count": index_count,
+		"agent_radius_m": agent_radius_m,
+		"agent_height_m": agent_height_m,
+		"agent_max_slope_degrees": agent_max_slope_degrees,
 	}
+
+
+func _validate_foliage_quality(
+	quality_tier: StringName,
+	projection_area_m2: float,
+	instance_count: int
+) -> Dictionary:
+	if quality_tier == &"custom":
+		if projection_area_m2 != 0.0 \
+		and (not is_finite(projection_area_m2) \
+			or projection_area_m2 <= 0.0 \
+			or projection_area_m2 > MAX_FOLIAGE_PROJECTION_AREA_M2):
+			return _error(
+				"invalid_foliage_projection_area",
+				"Custom foliage projection area must be zero or a finite positive bounded value.",
+			)
+		return {"ok": true, "code": "ok"}
+	if not FOLIAGE_QUALITY_TIERS.has(quality_tier):
+		return _error(
+			"invalid_foliage_quality_tier",
+			"Foliage quality tier must be low, medium, high, or custom.",
+		)
+	if not is_finite(projection_area_m2) \
+	or projection_area_m2 <= 0.0 \
+	or projection_area_m2 > MAX_FOLIAGE_PROJECTION_AREA_M2:
+		return _error(
+			"invalid_foliage_projection_area",
+			"Named foliage quality tiers require a finite positive bounded projection area.",
+		)
+	var tier: Dictionary = FOLIAGE_QUALITY_TIERS[quality_tier]
+	var density_limit := floori(
+		projection_area_m2 * float(tier.maximum_density_per_square_m)
+	)
+	var effective_limit: int = min(int(tier.maximum_instances), density_limit)
+	if instance_count > effective_limit:
+		return _error(
+			"foliage_quality_limit",
+			"Foliage transforms exceed the selected quality tier's instance or density ceiling.",
+		)
+	return {"ok": true, "code": "ok", "effective_instance_limit": effective_limit}
+
+
+func _validate_path_collision_shape(shape: Shape3D) -> Dictionary:
+	var vertex_count := 0
+	var extent_m := 0.0
+	if shape is BoxShape3D:
+		var size := (shape as BoxShape3D).size
+		if not _finite_vector3(size) or size.x <= 0.0 or size.y <= 0.0 or size.z <= 0.0:
+			return _error("invalid_path_collision_shape", "Box collision size must be finite and positive.")
+		vertex_count = 8
+		extent_m = max(size.x, max(size.y, size.z))
+	elif shape is CapsuleShape3D:
+		var capsule := shape as CapsuleShape3D
+		if not is_finite(capsule.radius) or not is_finite(capsule.height) \
+		or capsule.radius <= 0.0 or capsule.height <= 0.0:
+			return _error("invalid_path_collision_shape", "Capsule collision dimensions must be finite and positive.")
+		vertex_count = 16
+		extent_m = max(capsule.radius * 2.0, capsule.height)
+	elif shape is CylinderShape3D:
+		var cylinder := shape as CylinderShape3D
+		if not is_finite(cylinder.radius) or not is_finite(cylinder.height) \
+		or cylinder.radius <= 0.0 or cylinder.height <= 0.0:
+			return _error("invalid_path_collision_shape", "Cylinder collision dimensions must be finite and positive.")
+		vertex_count = 16
+		extent_m = max(cylinder.radius * 2.0, cylinder.height)
+	elif shape is ConvexPolygonShape3D:
+		var points := (shape as ConvexPolygonShape3D).points
+		var point_check := _validate_collision_points(points, 4)
+		if not point_check.ok:
+			return point_check
+		vertex_count = points.size()
+		extent_m = float(point_check.extent_m)
+	elif shape is ConcavePolygonShape3D:
+		var faces := (shape as ConcavePolygonShape3D).get_faces()
+		if faces.size() % 3 != 0:
+			return _error(
+				"invalid_path_collision_shape",
+				"Concave collision faces must contain complete triangles.",
+			)
+		var face_check := _validate_collision_points(faces, 3)
+		if not face_check.ok:
+			return face_check
+		vertex_count = faces.size()
+		extent_m = float(face_check.extent_m)
+	else:
+		return _error(
+			"unsupported_path_collision_shape",
+			"Pre-baked path collision supports box, capsule, cylinder, convex, or concave shapes.",
+		)
+	if vertex_count > int(_limits.max_path_collision_vertices):
+		return _error(
+			"path_collision_vertex_limit",
+			"Pre-baked path collision exceeds max_path_collision_vertices.",
+		)
+	if extent_m > float(_limits.max_path_collision_extent_m):
+		return _error(
+			"path_collision_extent_limit",
+			"Pre-baked path collision exceeds max_path_collision_extent_m.",
+		)
+	return {
+		"ok": true,
+		"code": "ok",
+		"vertex_count": vertex_count,
+		"extent_m": extent_m,
+	}
+
+
+func _validate_collision_points(points: PackedVector3Array, minimum: int) -> Dictionary:
+	if points.size() < minimum or points.size() > int(_limits.max_path_collision_vertices):
+		return _error(
+			"path_collision_vertex_limit",
+			"Pre-baked path collision point count exceeds configured bounds.",
+		)
+	var extent_m := 0.0
+	for point in points:
+		if not _finite_vector3(point):
+			return _error("invalid_path_collision_shape", "Path collision points must be finite.")
+		extent_m = max(
+			extent_m,
+			max(abs(point.x) * 2.0, max(abs(point.y) * 2.0, abs(point.z) * 2.0)),
+		)
+	return {"ok": true, "code": "ok", "extent_m": extent_m}
 
 
 func _validate_resource(resource: Resource, label: String) -> Dictionary:
@@ -764,6 +1155,7 @@ func _has_installed_projections() -> bool:
 
 
 func _validate_installed_limits(candidate: Dictionary) -> Dictionary:
+	var installed_path_collision := 0
 	for capability in CAPABILITIES:
 		var records: Dictionary = _installed[capability]
 		if records.size() > int(candidate.max_installed_per_capability):
@@ -772,6 +1164,13 @@ func _validate_installed_limits(candidate: Dictionary) -> Dictionary:
 				"max_installed_per_capability is below current ownership.",
 			)
 		for record in records.values():
+			if capability == &"mesh_hlod" \
+			and int(candidate.hlod_cross_fade_steps) \
+			!= int(_limits.hlod_cross_fade_steps):
+				return _error(
+					"hlod_transition_policy_in_use",
+					"Release installed HLOD projections before changing fade steps.",
+				)
 			if capability == &"foliage" \
 			and (record.transforms as Array).size() > int(candidate.max_foliage_instances):
 				return _error("foliage_limit_in_use", "Foliage limit is below an installed projection.")
@@ -783,6 +1182,32 @@ func _validate_installed_limits(candidate: Dictionary) -> Dictionary:
 			elif int(record.vertex_count) > int(candidate.max_mesh_vertices) \
 			or int(record.index_count) > int(candidate.max_mesh_indices):
 				return _error("mesh_limit_in_use", "Mesh limits are below an installed projection.")
+			if capability == &"paths" and int(record.get("collision_shape_count", 0)) > 0:
+				installed_path_collision += 1
+				if not bool(candidate.allow_path_collision):
+					return _error(
+						"path_collision_policy_in_use",
+						"Release pre-baked path collision before disabling it.",
+					)
+				if int(record.get("collision_vertex_count", 0)) \
+				> int(candidate.max_path_collision_vertices) \
+				or float(record.get("collision_extent_m", 0.0)) \
+				> float(candidate.max_path_collision_extent_m):
+					return _error(
+						"path_collision_limit_in_use",
+						"Path collision limits are below installed data.",
+					)
+				if int(candidate.path_collision_layer) != int(_limits.path_collision_layer) \
+				or int(candidate.path_collision_mask) != int(_limits.path_collision_mask):
+					return _error(
+						"path_collision_policy_in_use",
+						"Release pre-baked path collision before changing layers or masks.",
+					)
+	if installed_path_collision > int(candidate.max_path_collision_projections):
+		return _error(
+			"path_collision_projection_limit_in_use",
+			"Path collision projection limit is below current ownership.",
+		)
 	return {"ok": true, "code": "ok"}
 
 
@@ -800,6 +1225,20 @@ func _capability_owned_key_count(capability: StringName) -> int:
 		if work.capability == capability:
 			keys[str(work.work_key)] = true
 	return keys.size()
+
+
+func _owned_path_collision_count(excluding_work_key := "") -> int:
+	var count := 0
+	for key in (_installed[&"paths"] as Dictionary):
+		if str(key) != excluding_work_key \
+		and int(_installed[&"paths"][key].get("collision_shape_count", 0)) > 0:
+			count += 1
+	for work in _pending:
+		if work.capability == &"paths" \
+		and str(work.work_key) != excluding_work_key \
+		and int(work.get("collision_shape_count", 0)) > 0:
+			count += 1
+	return count
 
 
 func _find_pending(work_key: String, capability: StringName = &"") -> int:
@@ -880,6 +1319,13 @@ func _notification(what: int) -> void:
 
 func _public_limits() -> Dictionary:
 	return _limits.duplicate(true)
+
+
+func _public_foliage_quality_tiers() -> Dictionary:
+	var result := {}
+	for key in FOLIAGE_QUALITY_TIERS:
+		result[str(key)] = (FOLIAGE_QUALITY_TIERS[key] as Dictionary).duplicate(true)
+	return result
 
 
 func _error(code: String, message: String) -> Dictionary:

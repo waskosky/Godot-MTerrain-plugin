@@ -23,6 +23,10 @@ MEASUREMENT_LIMITS = {
     "estimated_region_bytes": "maximum_estimated_region_bytes",
     "resident_regions": "maximum_resident_regions",
     "collision_regions": "maximum_collision_regions",
+    "extended_scheduler_longest_step_ms": "maximum_extended_scheduler_step_ms",
+    "extended_foliage_instances": "maximum_extended_foliage_instances",
+    "extended_resident_projections": "maximum_extended_resident_projections",
+    "extended_path_collision_shapes": "maximum_extended_path_collision_shapes",
     "eviction_recovery_ms": "maximum_eviction_recovery_ms",
 }
 
@@ -327,7 +331,7 @@ def fixture_contract_passes(
 ) -> bool:
     accepted_profiles = fixture_contract.get("runtime_profiles", [])
     try:
-        return (
+        core_passes = (
             fixture.get("schema") == "mterrain-web-performance-fixture/v1"
             and fixture.get("runtime_profile") == expected_profile
             and expected_profile in accepted_profiles
@@ -355,5 +359,121 @@ def fixture_contract_passes(
                 int(fixture.get("route_stops", 0)),
             )
         )
+        if not core_passes:
+            return False
+        extended = fixture.get("extended_runtime")
+        if expected_profile == "web_core":
+            return extended == {"enabled": False}
+        contract = fixture_contract.get("extended_runtime")
+        if not isinstance(extended, dict) or not isinstance(contract, dict):
+            return False
+        expected_counts = contract.get("maximum_installed_counts")
+        expected_quality = contract.get("maximum_quality_tier_instances")
+        final_counts = extended.get("final_installed_counts")
+        metrics = extended.get("metrics")
+        if not all(
+            isinstance(value, dict)
+            for value in (expected_counts, expected_quality, final_counts, metrics)
+        ):
+            return False
+        integer_metrics = (
+            "queued",
+            "completed",
+            "cancelled",
+            "coalesced",
+            "released",
+            "foliage_instance_writes",
+            "hlod_swaps",
+            "hlod_transition_starts",
+            "hlod_transition_steps",
+            "hlod_transition_cancellations",
+            "path_collision_installs",
+            "steps",
+            "longest_step_usec",
+        )
+        if any(
+            not isinstance(metrics.get(name), int)
+            or isinstance(metrics.get(name), bool)
+            or metrics.get(name) < 0
+            for name in integer_metrics
+        ):
+            return False
+        return (
+            extended.get("enabled") is True
+            and extended.get("schema") == "mterrain-web-extended-performance/v1"
+            and extended.get("api_version") == 1
+            and extended.get("instance_ops_per_step")
+            == contract.get("instance_ops_per_step")
+            and extended.get("apply_ops_per_step")
+            == contract.get("apply_ops_per_step")
+            and extended.get("hlod_cross_fade_steps")
+            == contract.get("hlod_cross_fade_steps")
+            and extended.get("query_interval_stops")
+            == contract.get("query_interval_stops")
+            and extended.get("navigation_queries")
+            == contract.get("expected_navigation_queries")
+            and extended.get("path_collision_queries")
+            == contract.get("expected_path_collision_queries")
+            and 0 < int(extended.get("max_pending_work", 0))
+            <= int(contract.get("maximum_pending_work", -1))
+            and int(extended.get("max_instance_ops", -1))
+            == int(contract.get("instance_ops_per_step", -2))
+            and int(extended.get("max_apply_ops", -1))
+            == int(contract.get("apply_ops_per_step", -2))
+            and extended.get("max_installed_counts") == expected_counts
+            and extended.get("max_foliage_instances")
+            == contract.get("maximum_foliage_instances")
+            and extended.get("max_quality_tier_instances") == expected_quality
+            and extended.get("max_path_collision_shapes")
+            == contract.get("maximum_path_collision_shapes")
+            and extended.get("final_pending_work") == 0
+            and final_counts == {name: 0 for name in expected_counts}
+            and metrics["queued"] == contract.get("expected_completed_projections")
+            and metrics["completed"] == contract.get("expected_completed_projections")
+            and metrics["cancelled"] == 0
+            and metrics["coalesced"] == 0
+            and metrics["released"] == contract.get("expected_released_projections")
+            and metrics["foliage_instance_writes"]
+            == contract.get("expected_foliage_instance_writes")
+            and metrics["hlod_swaps"] == contract.get("expected_hlod_swaps")
+            and metrics["hlod_transition_starts"]
+            == contract.get("expected_hlod_swaps")
+            and metrics["hlod_transition_steps"]
+            == contract.get("expected_hlod_transition_steps")
+            and metrics["hlod_transition_cancellations"] == 0
+            and metrics["path_collision_installs"]
+            == contract.get("expected_path_collision_installs")
+            and metrics["steps"] >= int(fixture.get("route_stops", 0))
+            and metrics["longest_step_usec"] > 0
+        )
     except (TypeError, ValueError):
         return False
+
+
+def extended_runtime_measurements(
+    fixture: dict[str, Any],
+) -> dict[str, float | int]:
+    extended = fixture.get("extended_runtime")
+    if not isinstance(extended, dict) or extended.get("enabled") is not True:
+        return {
+            "extended_scheduler_longest_step_ms": 0.0,
+            "extended_foliage_instances": 0,
+            "extended_resident_projections": 0,
+            "extended_path_collision_shapes": 0,
+        }
+    metrics = extended.get("metrics", {})
+    counts = extended.get("max_installed_counts", {})
+    longest_usec = metrics.get("longest_step_usec", -1000)
+    resident = sum(
+        value
+        for value in counts.values()
+        if isinstance(value, int) and not isinstance(value, bool)
+    ) if isinstance(counts, dict) else -1
+    return {
+        "extended_scheduler_longest_step_ms": float(longest_usec) / 1000.0,
+        "extended_foliage_instances": extended.get("max_foliage_instances", -1),
+        "extended_resident_projections": resident,
+        "extended_path_collision_shapes": extended.get(
+            "max_path_collision_shapes", -1
+        ),
+    }

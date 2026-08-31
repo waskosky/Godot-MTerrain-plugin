@@ -18,7 +18,20 @@ PERFORMANCE_FIXTURE_FILES = (
     "tests/web_performance/main.gd",
     "tests/web_performance/evidence_bridge.js",
     "tests/web_smoke/main.tscn",
+    "tests/web_smoke/main.gd.uid",
     "tests/web_smoke/project.godot",
+    "tests/web_smoke/fixtures/grass_cluster.obj",
+    "tests/web_smoke/fixtures/grass_cluster.obj.import",
+    "tests/web_smoke/fixtures/grass_material.tres",
+    "tests/web_smoke/fixtures/road_strip.obj",
+    "tests/web_smoke/fixtures/road_strip.obj.import",
+    "tests/web_smoke/fixtures/road_material.tres",
+    "tests/web_smoke/fixtures/road_collision.tres",
+    "tests/web_smoke/fixtures/rock_near.obj",
+    "tests/web_smoke/fixtures/rock_near.obj.import",
+    "tests/web_smoke/fixtures/rock_far.obj",
+    "tests/web_smoke/fixtures/rock_far.obj.import",
+    "tests/web_smoke/fixtures/walkable_nav.tres",
 )
 
 
@@ -255,7 +268,7 @@ def main() -> int:
             shutil.copy2(ROOT / "tests" / "web_performance" / "main.gd", stage / "main.gd")
         elif args.fixture == "rollback":
             shutil.copy2(ROOT / "tests" / "web_rollback" / "main.gd", stage / "main.gd")
-        if args.profile == "web_core" or args.fixture in ("performance", "rollback"):
+        if args.profile == "web_core" or args.fixture == "rollback":
             shutil.rmtree(stage / "fixtures", ignore_errors=True)
         # Never let a local import/cache directory influence the staged export.
         shutil.rmtree(stage / ".godot", ignore_errors=True)

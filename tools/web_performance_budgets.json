@@ -1,5 +1,33 @@
 {
   "fixture": {
+    "extended_runtime": {
+      "apply_ops_per_step": 4,
+      "expected_completed_projections": 1280,
+      "expected_foliage_instance_writes": 32768,
+      "expected_hlod_swaps": 256,
+      "expected_hlod_transition_steps": 1024,
+      "expected_navigation_queries": 4,
+      "expected_path_collision_installs": 256,
+      "expected_path_collision_queries": 4,
+      "expected_released_projections": 5,
+      "hlod_cross_fade_steps": 4,
+      "instance_ops_per_step": 64,
+      "maximum_foliage_instances": 256,
+      "maximum_installed_counts": {
+        "foliage": 1,
+        "mesh_hlod": 1,
+        "navigation": 2,
+        "paths": 1
+      },
+      "maximum_path_collision_shapes": 1,
+      "maximum_pending_work": 5,
+      "maximum_quality_tier_instances": {
+        "high": 256,
+        "low": 64,
+        "medium": 128
+      },
+      "query_interval_stops": 64
+    },
     "route_region_side": 8,
     "route_repetitions": 4,
     "route_stops": 256,
@@ -16,6 +44,10 @@
       "maximum_compressed_runtime_export_bytes": 14680064,
       "maximum_compressed_side_module_bytes": 200000,
       "maximum_estimated_region_bytes": 33554432,
+      "maximum_extended_foliage_instances": 256,
+      "maximum_extended_path_collision_shapes": 1,
+      "maximum_extended_resident_projections": 5,
+      "maximum_extended_scheduler_step_ms": 33.4,
       "maximum_eviction_recovery_ms": 2000.0,
       "maximum_first_collision_ms": 1500.0,
       "maximum_first_tile_ms": 1500.0,
@@ -33,6 +65,10 @@
       "maximum_compressed_runtime_export_bytes": 14680064,
       "maximum_compressed_side_module_bytes": 200000,
       "maximum_estimated_region_bytes": 33554432,
+      "maximum_extended_foliage_instances": 256,
+      "maximum_extended_path_collision_shapes": 1,
+      "maximum_extended_resident_projections": 5,
+      "maximum_extended_scheduler_step_ms": 50.0,
       "maximum_eviction_recovery_ms": 4000.0,
       "maximum_first_collision_ms": 3000.0,
       "maximum_first_tile_ms": 3000.0,

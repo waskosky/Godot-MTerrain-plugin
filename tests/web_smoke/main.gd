@@ -165,7 +165,7 @@ func _ready() -> void:
 	if failures.is_empty():
 		status.text = "MTerrain %s · bounded terrain and collision" % expected_profile
 		if extended:
-			status.text += "\nGrass · navigation route · baked path · HLOD swap"
+			status.text += "\nTiered grass · joined navigation · path collision · HLOD fade"
 		status.text += "\nGodot 4.7 · WebGL2 · wasm32 · no threads"
 		print(
 			"MTERRAIN_WEB_SMOKE_OK initialized_tile_samples=4489 rejected_non_finite=1 ",
@@ -498,7 +498,11 @@ func _verify_extended_runtime() -> String:
 	var companion_capabilities: Dictionary = runtime.call(&"get_runtime_capabilities")
 	if companion_capabilities.get("api_version") != 1 \
 	or companion_capabilities.get("runtime_navigation_baking") != false \
-	or companion_capabilities.get("runtime_curve_deformation") != false:
+	or companion_capabilities.get("runtime_curve_deformation") != false \
+	or companion_capabilities.get("prebaked_path_collision") != true \
+	or companion_capabilities.get("runtime_path_collision_generation") != false \
+	or companion_capabilities.get("hlod_cross_fade") != true \
+	or not (companion_capabilities.get("foliage_quality_tiers", {}) as Dictionary).has("low"):
 		runtime.queue_free()
 		return "web_extended companion capability contract was inconsistent"
 	var allowed_paths := PackedStringArray([
@@ -506,13 +510,19 @@ func _verify_extended_runtime() -> String:
 		"res://fixtures/grass_material.tres",
 		"res://fixtures/road_strip.obj",
 		"res://fixtures/road_material.tres",
+		"res://fixtures/road_collision.tres",
 		"res://fixtures/rock_near.obj",
 		"res://fixtures/rock_far.obj",
 		"res://fixtures/walkable_nav.tres",
 	])
 	var configured: Dictionary = runtime.call(
 		&"configure_limits",
-		{"allowed_resource_paths": allowed_paths},
+		{
+			"allowed_resource_paths": allowed_paths,
+			"allow_path_collision": true,
+			"max_path_collision_projections": 2,
+			"hlod_cross_fade_steps": 3,
+		},
 	)
 	if not bool(configured.get("ok", false)):
 		runtime.queue_free()
@@ -521,12 +531,13 @@ func _verify_extended_runtime() -> String:
 	var grass_material := load("res://fixtures/grass_material.tres") as Material
 	var road_mesh := load("res://fixtures/road_strip.obj") as Mesh
 	var road_material := load("res://fixtures/road_material.tres") as Material
+	var road_collision := load("res://fixtures/road_collision.tres") as Shape3D
 	var near_mesh := load("res://fixtures/rock_near.obj") as Mesh
 	var farther_mesh := load("res://fixtures/rock_far.obj") as Mesh
 	var navigation_mesh := load("res://fixtures/walkable_nav.tres") as NavigationMesh
 	if mesh == null or grass_material == null or road_mesh == null \
 	or road_material == null or near_mesh == null or farther_mesh == null \
-	or navigation_mesh == null:
+	or road_collision == null or navigation_mesh == null:
 		runtime.queue_free()
 		return "web_extended exported fixture resource failed to load"
 	var grass_basis := Basis.IDENTITY.scaled(Vector3(3.0, 4.0, 3.0))
@@ -542,16 +553,26 @@ func _verify_extended_runtime() -> String:
 			1,
 			4,
 			mesh,
-			transforms,
-			grass_material,
-		),
+				transforms,
+				grass_material,
+				&"low",
+				16.0,
+			),
 		runtime.call(
 			&"queue_navigation",
-			"browser-nav",
+			"browser-nav-left",
 			1,
 			3,
 			navigation_mesh,
 			Transform3D(Basis.IDENTITY, Vector3(128.0, 72.0, 128.0)),
+		),
+		runtime.call(
+			&"queue_navigation",
+			"browser-nav-right",
+			1,
+			3,
+			navigation_mesh,
+			Transform3D(Basis.IDENTITY, Vector3(144.0, 72.0, 128.0)),
 		),
 		runtime.call(
 			&"queue_path",
@@ -561,6 +582,7 @@ func _verify_extended_runtime() -> String:
 			road_mesh,
 			Transform3D(Basis.IDENTITY, Vector3(128.0, 72.0, 128.0)),
 			road_material,
+			road_collision,
 		),
 		runtime.call(
 			&"queue_mesh_hlod",
@@ -580,20 +602,27 @@ func _verify_extended_runtime() -> String:
 		if not bool(result.get("ok", false)):
 			runtime.queue_free()
 			return "web_extended projection failed to queue: %s" % JSON.stringify(result)
+	var hlod_near := Vector3(136.0, _fixture_height(136.0, 128.0) + 0.2, 128.0)
 	for _step in 32:
 		var stepped: Dictionary = runtime.call(
 			&"step_runtime_work",
 			1,
 			1,
-			Vector3.ZERO,
+			hlod_near,
 		)
 		if stepped.get("status") == "idle":
 			break
 	var state: Dictionary = runtime.call(&"get_runtime_state")
-	for capability in [&"foliage", &"navigation", &"paths", &"mesh_hlod"]:
+	for capability in [&"foliage", &"paths", &"mesh_hlod"]:
 		if int(state.installed_counts.get(capability, 0)) != 1:
 			runtime.queue_free()
 			return "web_extended did not install %s" % capability
+	if int(state.installed_counts.navigation) != 2 \
+	or int(state.installed_collision_shapes.paths) != 1 \
+	or str(state.installed.foliage[0].quality_tier) != "low" \
+	or state.installed.mesh_hlod[0].lod_index != 0:
+		runtime.queue_free()
+		return "web_extended installed-state maturation contract was incomplete"
 	var navigation_map := runtime.get_world_3d().navigation_map
 	var navigation_path := PackedVector3Array()
 	for _iteration in 30:
@@ -602,7 +631,7 @@ func _verify_extended_runtime() -> String:
 		navigation_path = NavigationServer3D.map_get_path(
 			navigation_map,
 			Vector3(124.0, 72.0, 124.0),
-			Vector3(132.0, 72.0, 132.0),
+			Vector3(148.0, 72.0, 132.0),
 			true,
 		)
 		if navigation_path.size() >= 2:
@@ -610,6 +639,15 @@ func _verify_extended_runtime() -> String:
 	if navigation_path.size() < 2:
 		runtime.queue_free()
 		return "web_extended navigation projection did not answer a browser path query"
+	var collision_hit := runtime.get_world_3d().direct_space_state.intersect_ray(
+		PhysicsRayQueryParameters3D.create(
+			Vector3(128.0, 75.0, 128.0),
+			Vector3(128.0, 69.0, 128.0),
+		),
+	)
+	if collision_hit.is_empty():
+		runtime.queue_free()
+		return "web_extended pre-baked path collision did not answer a browser ray query"
 	var moved_transforms := transforms.duplicate(true)
 	for index in moved_transforms.size():
 		var moved_transform: Transform3D = moved_transforms[index]
@@ -617,15 +655,21 @@ func _verify_extended_runtime() -> String:
 		moved_transforms[index] = moved_transform
 	var replacements := [
 		runtime.call(
-			&"queue_foliage", "browser-grove", 2, 4, mesh, moved_transforms, grass_material,
+			&"queue_foliage", "browser-grove", 2, 4, mesh, moved_transforms,
+			grass_material, &"low", 16.0,
 		),
 		runtime.call(
-			&"queue_navigation", "browser-nav", 2, 3, navigation_mesh,
+			&"queue_navigation", "browser-nav-left", 2, 3, navigation_mesh,
 			Transform3D(Basis.IDENTITY, Vector3(129.0, 72.0, 128.0)),
+		),
+		runtime.call(
+			&"queue_navigation", "browser-nav-right", 2, 3, navigation_mesh,
+			Transform3D(Basis.IDENTITY, Vector3(145.0, 72.0, 128.0)),
 		),
 		runtime.call(
 			&"queue_path", "browser-road", 2, 2, road_mesh,
 			Transform3D(Basis.IDENTITY, Vector3(129.0, 72.0, 128.0)), road_material,
+			road_collision,
 		),
 		runtime.call(
 			&"queue_mesh_hlod", "browser-hlod", 2, 1, [near_mesh, farther_mesh],
@@ -641,20 +685,27 @@ func _verify_extended_runtime() -> String:
 		if not bool(replacement.get("ok", false)):
 			runtime.queue_free()
 			return "web_extended moving replacement failed: %s" % JSON.stringify(replacement)
+	var hlod_far := Vector3(500.0, 72.0, 500.0)
 	for _step in 32:
 		var stepped: Dictionary = runtime.call(
-			&"step_runtime_work", 1, 1, camera.global_position,
+			&"step_runtime_work", 1, 1, hlod_far,
 		)
 		if stepped.get("status") == "idle":
 			break
 	state = runtime.call(&"get_runtime_state")
-	for capability in [&"foliage", &"navigation", &"paths", &"mesh_hlod"]:
+	for capability in [&"foliage", &"paths", &"mesh_hlod"]:
 		if int(state.installed[capability][0].revision) != 2:
 			runtime.queue_free()
 			return "web_extended moving replacement did not install %s revision 2" % capability
-	if int(state.metrics.get("hlod_swaps", 0)) < 1:
+	if int(state.installed.navigation[0].revision) != 2 \
+	or int(state.installed.navigation[1].revision) != 2:
 		runtime.queue_free()
-		return "web_extended HLOD did not swap under bounded focus work"
+		return "web_extended moving replacement did not install both navigation revisions"
+	if int(state.metrics.get("hlod_swaps", 0)) < 1 \
+	or int(state.metrics.get("hlod_transition_steps", 0)) < 3 \
+	or int(state.metrics.get("path_collision_installs", 0)) < 2:
+		runtime.queue_free()
+		return "web_extended bounded HLOD fade or path-collision replacement did not finish"
 	return ""
 
 

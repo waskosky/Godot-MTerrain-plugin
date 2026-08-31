@@ -12,6 +12,7 @@ from web_evidence_common import (
     bounded_text,
     browser_version_matches,
     evaluate_budgets,
+    extended_runtime_measurements,
     fixture_contract_passes,
     frame_summary,
     load_object,
@@ -190,7 +191,20 @@ def main() -> int:
             "tests/web_performance/main.gd",
             "tests/web_performance/evidence_bridge.js",
             "tests/web_smoke/main.tscn",
+            "tests/web_smoke/main.gd.uid",
             "tests/web_smoke/project.godot",
+            "tests/web_smoke/fixtures/grass_cluster.obj",
+            "tests/web_smoke/fixtures/grass_cluster.obj.import",
+            "tests/web_smoke/fixtures/grass_material.tres",
+            "tests/web_smoke/fixtures/road_strip.obj",
+            "tests/web_smoke/fixtures/road_strip.obj.import",
+            "tests/web_smoke/fixtures/road_material.tres",
+            "tests/web_smoke/fixtures/road_collision.tres",
+            "tests/web_smoke/fixtures/rock_near.obj",
+            "tests/web_smoke/fixtures/rock_near.obj.import",
+            "tests/web_smoke/fixtures/rock_far.obj",
+            "tests/web_smoke/fixtures/rock_far.obj.import",
+            "tests/web_smoke/fixtures/walkable_nav.tres",
         }
         or not all(
             isinstance(value, str) and len(value) == 64
@@ -250,6 +264,7 @@ def main() -> int:
         )
         / 1000.0,
     }
+    measurements.update(extended_runtime_measurements(fixture))
     budget_results = evaluate_budgets(measurements, limits)
     passed = (
         required_budget_results_pass(budget_results)

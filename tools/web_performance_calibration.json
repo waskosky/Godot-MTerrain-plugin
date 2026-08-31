@@ -3,5 +3,5 @@
   "release_gate_eligible": false,
   "schema": "mterrain-web-performance-calibration-v1",
   "status": "post_build_candidate_bound_approval_required",
-  "threshold_contract_sha256": "85efb7c824b68061ebaf7da94a11abd4711a976bc324b1c3d0b782aaee3d9098"
+  "threshold_contract_sha256": "7374732e68d71d99c39eab177750b51e34b3af005382130797f7460d8cb0c4ce"
 }

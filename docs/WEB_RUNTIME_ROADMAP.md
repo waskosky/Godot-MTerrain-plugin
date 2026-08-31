@@ -9,7 +9,10 @@
   fixtures, a pinned source-built export template, hosted-browser workflow,
   fixed traversal capture, candidate-bound external-evidence verifier, hosted
   evidence aggregation, and independent core/extended whole-bundle rollback
-  harnesses implemented locally on 2026-08-30; representative hardware,
+  harnesses implemented locally on 2026-08-30; tiered foliage ceilings,
+  joined-region navigation/profile validation, opt-in pre-baked path collision,
+  bounded HLOD cross-fades, and a 256-stop extended moving-residency fixture
+  implemented and locally verified on 2026-08-31; representative hardware,
   calibration, physical-mobile, upstream-hosted, and actual rollback evidence
   remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
@@ -141,9 +144,14 @@ The implemented local release-candidate slice now includes:
   deterministic per-file gzip size for the complete production runtime export,
   and threshold contract; the physical-evidence recorder rejects any mismatch.
   Those fixture sources also ship inside the candidate bundle, allowing the
-  stable verifier to compare them to the measured context. The same fixture and
-  budgets apply independently to core and extended profiles and record the
-  selected profile.
+  stable verifier to compare them to the measured context. The extended form
+  moves bounded foliage, two adjacent navigation regions, a baked path with one
+  supplied collision shape, and a two-level HLOD projection at every stop. It
+  cycles low/medium/high foliage ceilings, limits ownership to 1/2/1/1, issues
+  joined navigation queries and collision rays once per route, advances HLOD
+  fades under a separate apply budget, and requires zero final ownership. The
+  same fixture and budgets apply independently to core and extended profiles and
+  record the selected profile.
   `web_performance_budgets.json` contains deliberately provisional desktop and
   mobile thresholds. Bundles retain a provisional
   `web_performance_calibration.json` template. After the immutable candidate and
@@ -188,17 +196,24 @@ The implemented local release-candidate slice now includes:
   marker and nonblank framebuffer but fails the strict error gate as described
   above. These are automated correctness checks, not headed-hardware or
   physical-device support claims.
+- On 2026-08-31 the expanded extended fixture completed all 256 stops under
+  local software-rendered Chromium: 1,280 projection installs, 32,768 foliage
+  writes, 256 pre-baked path-collision installs, 256 HLOD swaps over 1,024 fade
+  steps, four joined navigation queries, four collision rays, and zero final
+  ownership. The companion's observed longest step was 10.8 ms. The run failed
+  the provisional hardware frame/startup thresholds, as a software-rendered run
+  should; it is bounded-correctness diagnostic evidence, not a calibrated lane.
 - Binaryen inspection records the artifact feature set and rejects thread or
-  shared-memory requirements. In the fresh local release-candidate build, core
+  shared-memory requirements. In the `rc.2` local reference build, core
   debug/release side modules are 931,933/904,382 raw bytes and
   139,334/138,809 bytes at Brotli quality 11; extended side modules are
   932,239/904,704 raw and 139,576/138,913 compressed. The current production
-  debug export totals 11,691,852 deterministic-gzip bytes for core and
+  debug export totaled 11,691,852 deterministic-gzip bytes for core and
   11,716,450 for extended, excluding evidence instrumentation. The extended
-  profile also
-  packages a separately hashed 33,220-byte companion script. The tagged clean-CI
-  receipts and release index remain authoritative rather than these local
-  measurements.
+  profile packaged a separately hashed 33,220-byte companion script. The
+  2026-08-31 companion and fixture additions intentionally supersede those local
+  size observations; the next clean build receipts and release index are
+  authoritative.
 
 The remaining gaps are deliberately material:
 
@@ -223,12 +238,14 @@ The remaining gaps are deliberately material:
    evidence remain mandatory before a browser release claim. Budgets cannot be
    promoted from provisional until their exact evidence digests are reviewed.
 6. Foliage, mesh HLOD, navigation, and paths have bounded data-first projection
-   implementations plus small exported-resource and moving-revision fixtures.
-   Navigation now has an actual path-query proof and HLOD has transition
-   hysteresis. Each still needs representative content, longer moving-residency,
-   memory/frame-time, and physical-device evidence. Foliage collision, runtime
-   navigation baking, runtime mesh/curve deformation, and generated path
-   collision remain explicitly unsupported.
+   implementations plus exported-resource, moving-revision, and 256-stop
+   residency fixtures. Navigation crosses supplied region joins with validated
+   agent profiles; HLOD has hysteresis and bounded cross-fades; paths may install
+   one explicitly supplied pre-baked collision shape; foliage has immutable
+   quality-tier ceilings. Each still needs representative production content,
+   calibrated memory/frame-time, and physical-device evidence. Foliage
+   collision, runtime navigation baking, runtime mesh/curve deformation, and
+   generated path collision remain explicitly unsupported.
 
 These are engineering gaps, not evidence that bounded heightfield terrain cannot
 work on WebGL2.
@@ -386,6 +403,17 @@ range, precision, and decode math become a versioned contract with exact fixture
   accepted by the first batch API.
 - Caves, bridges, tunnels, and overhangs remain ordinary mesh/volume geometry,
   not special heightfield states.
+
+### 3.9 Extended authored-data boundary
+
+The first extended runtime accepts authored/exported resources and realizes them
+under explicit ownership budgets; it does not move authoring algorithms into a
+browser frame callback. Foliage quality tiers are immutable ceilings, supplied
+navigation retains its agent profile and may join adjacent regions, and HLOD may
+cross-fade through a bounded apply-step count. Paths may opt into one validated,
+allowlisted pre-baked primitive/convex/concave shape per projection. That opt-in
+does not imply curve deformation, terrain cutting, seam generation, or runtime
+collision generation. Those remain separately gated designs.
 
 ## 4. Build and packaging design
 
@@ -596,9 +624,11 @@ resource), finite transforms, mesh size, and an instance ceiling. It stages
 MultiMesh transforms under an instance-operation budget and retains the previous
 complete projection until atomic installation. Revision coalescing/cancellation,
 installed-key reservation, deterministic release, exported crossed-blade grass,
-and moving-revision fixtures are present. Representative art density tiers,
-long traversal, frame/memory budgets, physical-device shadows-off evidence, and
-all foliage collision work remain open.
+and moving-revision fixtures are present. Low/medium/high profiles now enforce
+fixed instance and per-square-metre ceilings, and the 256-stop fixture cycles all
+three under a separate 64-write step budget. Representative production art,
+calibrated frame/memory budgets, physical-device shadows-off evidence, and all
+foliage collision work remain open.
 
 ### 6.2 Mesh HLOD
 
@@ -612,9 +642,10 @@ levels with strictly increasing finite distances and changes at most one level
 per apply operation. It excludes decals, lights, GI, threaded loads, and arbitrary
 resource paths. Index as well as vertex counts are bounded, installed ownership
 fails closed, and configurable distance hysteresis prevents threshold thrash.
-Exported near/far rock and moving-revision fixtures are present. Cross-fade,
-long camera traversal, representative memory/frame-time, and physical-device
-gates remain open.
+Optional 0–16-step cross-fades retain active/incoming ownership and consume one
+apply operation per start, step, or cancellation. Exported near/far rock,
+moving-revision, and 256-stop four-step fixtures are present. Representative
+memory/frame-time and physical-device gates remain open.
 
 ### 6.3 Navigation
 
@@ -631,8 +662,11 @@ Implementation status: the companion installs bounded, already baked
 index counts, index bounds, resource scope, revision, and transform, and owns
 deterministic replacement/release. Runtime baking remains false in the capability
 contract. A real NavigationServer path-query fixture and exported navigation
-resource/moving-revision fixture are present; multi-region joins, agent
-radius/slope cases, long moving residency, and performance gates remain open.
+resource/moving-revision fixture are present. Agent radius, height, and slope
+are validated and reported; native/exported fixtures cross two adjacent regions,
+and the 256-stop route repeats joined queries under moving ownership. Production
+navigation complexity, calibrated performance, and physical-device gates remain
+open.
 
 ### 6.4 Paths
 
@@ -645,9 +679,12 @@ Implementation status: the companion realizes only pre-baked bounded `Mesh`
 resources with a finite transform and optional allowlisted material. Authoring,
 Bezier deformation, road/river collision generation, and seam creation are not
 part of the browser runtime. An exported road strip, allowlisted material, and
-moving-revision fixture are present; representative authored roads,
-terrain-seam conformance, optional pre-baked collision, long moving residency,
-and performance gates remain open.
+moving-revision fixture are present. Terrain-seam conformance, generated
+collision, and runtime deformation are not implied. One opt-in allowlisted
+pre-baked box/capsule/cylinder/convex/concave shape is bounded by projection,
+point, extent, layer, and mask limits; smoke and 256-stop fixtures require
+physics rays and zero final ownership. Production road complexity, calibrated
+performance, and physical-device gates remain open.
 
 ## 7. Testing strategy
 
@@ -852,7 +889,7 @@ keep the release gate open.
   prepare/serve/capture/record tooling now covers core and extended independently,
   and the candidate-index-bound machine gate names every absent rollback lane.
 
-### Milestone 6+ — Extended capabilities — first projections locally verified 2026-08-24
+### Milestone 6+ — Extended capabilities — bounded maturation locally verified 2026-08-31
 
 `web_extended` packages the same bounded terrain core plus a separately hashed
 companion. Foliage, mesh HLOD, navigation, and paths each have revision-safe,
@@ -863,7 +900,12 @@ installed ownership, moving revisions, and HLOD hysteresis. Fresh local
 current Chromium 151 and Firefox 153 runs load the same extended side-module
 hash, execute those exported-resource fixtures, return a real navigation route,
 perform an HLOD swap, capture a nonblank framebuffer, and report no console,
-page, request, or HTTP errors. Playwright WebKit 26.5 reaches the marker and
+page, request, or HTTP errors. On 2026-08-31 the fixtures added foliage quality
+ceilings, navigation profile/join queries, opt-in pre-baked path collision, HLOD
+cross-fades, and exact 256-stop moving-residency accounting. The local software
+run completed the bounded contract but failed provisional hardware timing
+thresholds and therefore does not close any representative lane. Playwright
+WebKit 26.5 reaches the marker and
 nonblank framebuffer but reports Godot WebGL feedback errors, so it remains a
 diagnostic. Each capability still requires
 its own representative-content, long-traversal performance/memory,
@@ -886,6 +928,8 @@ The following decisions remain evidence-driven:
 | Optional disk cache | None initially | Network/startup evidence plus a bounded versioned recovery design |
 | Foliage in core versus extended binary | Extended | Small binary/startup cost and a required first consumer |
 | Runtime navigation baking | Precomputed/supplied | Incremental baking meets mobile-Web frame and memory budgets |
+| Pre-baked path collision | Explicit opt-in; one bounded allowlisted shape | Representative road physics and device stalls pass independently |
+| HLOD transition | Immediate by default; optional bounded cross-fade | Representative content establishes a different safe default |
 
 Record a decision in this document before changing a default. Keep the old path
 until migration and rollback evidence exists.

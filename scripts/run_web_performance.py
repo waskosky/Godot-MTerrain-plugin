@@ -17,6 +17,7 @@ from playwright.async_api import async_playwright
 from run_web_smoke import SmokeHandler, ThreadingServer, git
 from web_evidence_common import (
     evaluate_budgets,
+    extended_runtime_measurements,
     fixture_contract_passes,
     frame_summary,
     load_object,
@@ -41,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         default="chromium",
     )
     parser.add_argument("--headed", action="store_true")
-    parser.add_argument("--timeout", type=float, default=240.0)
+    parser.add_argument("--timeout", type=float, default=360.0)
     parser.add_argument(
         "--evidence-dir", type=Path, default=ROOT / "build" / "evidence"
     )
@@ -333,6 +334,7 @@ def main() -> int:
         "collision_regions": fixture["max_collision_regions"],
         "eviction_recovery_ms": float(fixture["eviction_recovery_usec"]) / 1000.0,
     }
+    measurements.update(extended_runtime_measurements(fixture))
     budget_results = evaluate_budgets(measurements, limits)
     passed = (
         required_budget_results_pass(budget_results)
