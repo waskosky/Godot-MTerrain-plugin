@@ -171,6 +171,7 @@ func _ready() -> void:
 			"MTERRAIN_WEB_SMOKE_OK initialized_tile_samples=4489 rejected_non_finite=1 ",
 			"rejected_border=1 lod_transitions=1 recreate=1 phase_timings=1 ",
 			"bounded_scheduler=1 bounded_collision=1 scheduler_visual=1 ",
+			"profile=%s " % expected_profile,
 			"extended=%d " % int(extended),
 			JSON.stringify(capabilities),
 		)

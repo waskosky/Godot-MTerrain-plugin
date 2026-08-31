@@ -19,7 +19,10 @@
   browser export; the next run passed Chromium's corrected pin and exposed
   Playwright's host-only dependency marker in Firefox; canonical `0022` modes,
   an explicit immutable-payload tree policy, and diagnostic mismatch values are
-  implemented for the next rerun; representative hardware, calibration,
+  implemented; the following run accepted every browser/tool/template pin and
+  passed all four individual headed Chromium/Firefox smokes, then exposed a
+  producer/aggregator profile-token mismatch; explicit smoke profile identity
+  is implemented for the rerun; representative hardware, calibration,
   physical-mobile, and actual rollback evidence remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension

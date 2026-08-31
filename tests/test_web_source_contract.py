@@ -506,6 +506,7 @@ class WebSourceContractTests(unittest.TestCase):
             "./scripts/build_web_export_template.sh",
             "for browser in chromium firefox",
             '--browser "$browser"',
+            '--profile "$profile"',
             "xvfb-run --auto-servernum",
             "--headed",
             "Retain pinned Playwright WebKit diagnostic",
@@ -926,6 +927,9 @@ class WebSourceContractTests(unittest.TestCase):
         browser_runner = (ROOT / "scripts" / "run_web_smoke.py").read_text(
             encoding="utf-8"
         )
+        hosted_aggregator = (
+            ROOT / "scripts" / "record_web_hosted_correctness.py"
+        ).read_text(encoding="utf-8")
         native_runner = (
             ROOT / "scripts" / "run_native_core_smoke.sh"
         ).read_text(encoding="utf-8")
@@ -936,6 +940,10 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn('frame_data_url: capture.toDataURL("image/png")', browser_runner)
         self.assertIn('framebuffer_capture.write_bytes', browser_runner)
         self.assertIn('"harness_error_type": type(error).__name__', browser_runner)
+        self.assertIn('"profile": args.profile', browser_runner)
+        self.assertIn('f"profile={args.profile}"', browser_runner)
+        self.assertIn('"profile=%s " % expected_profile', web_smoke)
+        self.assertIn('evidence.get("profile") != profile', hosted_aggregator)
         for source in (native_smoke, web_smoke):
             self.assertIn('apply_height_tile"', source)
             self.assertIn("Vector2i(69, 69)", source)

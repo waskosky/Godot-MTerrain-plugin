@@ -281,6 +281,7 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
         "host": platform.platform(),
         "browser": args.browser,
         "mode": args.mode,
+        "profile": args.profile,
         "browser_version": browser_version,
         "headless": not args.headed,
         "viewport": {"width": 640, "height": 360},
@@ -325,6 +326,8 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
                 "recreate=1",
                 "phase_timings=1",
                 "scheduler_visual=1",
+                f"profile={args.profile}",
+                f"extended={int(args.profile == 'web_extended')}",
             ]
         )
     else:
@@ -402,6 +405,7 @@ def main() -> int:
                     },
                     "browser": args.browser,
                     "mode": args.mode,
+                    "profile": args.profile,
                     "headless": not args.headed,
                     "harness_error_type": type(error).__name__,
                     "harness_error": str(error).splitlines()[0][:512],

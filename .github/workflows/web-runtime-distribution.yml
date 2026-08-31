@@ -219,6 +219,7 @@ jobs:
                 "$PLAYWRIGHT_PYTHON" scripts/run_web_smoke.py \
                 --export-dir "build/web-smoke-$profile" \
                 --browser "$browser" \
+                --profile "$profile" \
                 --headed \
                 --browser-toolchain-receipt "$BROWSER_TOOLCHAIN_RECEIPT" \
                 --template-receipt build/receipts/web-template-debug.json \
@@ -241,6 +242,7 @@ jobs:
             if ! "$PLAYWRIGHT_PYTHON" scripts/run_web_smoke.py \
               --export-dir "build/web-smoke-$profile" \
               --browser webkit \
+              --profile "$profile" \
               --browser-toolchain-receipt "$BROWSER_TOOLCHAIN_RECEIPT" \
               --template-receipt build/receipts/web-template-debug.json \
               --evidence-dir "build/evidence/$profile/webkit-diagnostic"; then

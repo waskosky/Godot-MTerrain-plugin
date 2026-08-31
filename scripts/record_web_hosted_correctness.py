@@ -90,7 +90,11 @@ def validate_smoke(
         raise SystemExit(f"Unexpected hosted smoke schema for {profile}/{browser}")
     if evidence.get("passed") is not True:
         raise SystemExit(f"Hosted smoke did not pass for {profile}/{browser}")
-    if evidence.get("mode") != "smoke" or evidence.get("browser") != browser:
+    if (
+        evidence.get("mode") != "smoke"
+        or evidence.get("browser") != browser
+        or evidence.get("profile") != profile
+    ):
         raise SystemExit(f"Hosted smoke identity mismatch for {profile}/{browser}")
     if evidence.get("headless") is not False:
         raise SystemExit(
