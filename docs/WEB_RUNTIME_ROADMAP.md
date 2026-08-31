@@ -124,6 +124,10 @@ The implemented local release-candidate slice now includes:
   latest visual update reports a bounded LOD histogram/range, transition count,
   adjacent-level delta, camera, and terrain offset. The immediate API remains an
   idle-queue compatibility wrapper over that scheduler.
+- The active height-layer getter is explicitly bound and round-trip-smoked in
+  both native and exported Web fixtures. Project-neutral adapters can therefore
+  select the target layer for one atomic batch and restore the caller's prior
+  layer without importing editor code or guessing mutable state.
 - Bounded profiles load no implicit camera region during grid creation. Scheduler
   load/unload is the sole visual-region owner, unloaded regions release their
   mesh instances immediately, and the visual search can follow scheduler-loaded

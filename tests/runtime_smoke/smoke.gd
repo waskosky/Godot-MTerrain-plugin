@@ -95,6 +95,11 @@ func _run() -> void:
 		if not bool(terrain.call(&"is_grid_created")):
 			failures.append("memory-only terrain grid was not created")
 		else:
+			if not terrain.has_method(&"get_active_layer_name"):
+				failures.append("active height-layer getter was not bound")
+			elif str(terrain.call(&"get_active_layer_name")) != "background" \
+			or not bool(terrain.call(&"set_active_layer_by_name", "background")):
+				failures.append("active height-layer round trip failed")
 			var initial_state: Dictionary = terrain.call(&"get_runtime_state")
 			if int(initial_state.get("loaded_region_count", -1)) != 0 \
 			or int(initial_state.get("resident_tile_count", -1)) != 0 \
