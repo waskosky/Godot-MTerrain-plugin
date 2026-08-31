@@ -33,10 +33,12 @@ the complete runtime export rather than only the plug-in side module. Local
 headed Chromium/Firefox correctness checks are green for both profiles.
 Playwright WebKit reaches the fixture marker and a nonblank frame but its pinned
 Linux engine reports Godot framebuffer feedback errors, so it is retained as a
-diagnostic rather than mislabeled Safari evidence. The first hosted workflow
-run, calibrated headed representative-hardware performance, Safari proper,
-physical Android/iOS, and actual candidate-to-prior rollback receipts remain
-before a stable Web runtime claim.
+diagnostic rather than mislabeled Safari evidence. Pushes to the maintained
+`integration/next` review feed now run both required source-contract and full
+clean-clone distribution workflows without publishing a release. Calibrated
+headed representative-hardware performance, Safari proper, physical Android/iOS,
+and actual candidate-to-prior rollback receipts remain before a stable Web
+runtime claim.
 
 ![Screenshot_20230707_104154](https://github.com/mohsenph69/Godot-MTerrain-plugin/assets/52196206/7e3eb7da-af57-4ae5-8f55-f9fc1c8b26f8)
 

@@ -503,6 +503,15 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn("permissions:\n      contents: write", workflow)
         self.assertNotRegex(workflow, r"uses: [^\n]+@(?![0-9a-f]{40})")
 
+        source_workflow = (
+            ROOT / ".github" / "workflows" / "web-source-contract.yml"
+        ).read_text(encoding="utf-8")
+        for required_workflow in (workflow, source_workflow):
+            self.assertIn(
+                "branches:\n      - master\n      - integration/next",
+                required_workflow,
+            )
+
         packager = (
             ROOT / "scripts" / "package_web_release.py"
         ).read_text(encoding="utf-8")

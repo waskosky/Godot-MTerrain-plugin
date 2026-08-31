@@ -4,6 +4,14 @@ The Web release lane produces two independently selectable runtime bundles from
 one clean source revision. Compiled files remain ignored locally and are
 published only as CI review artifacts or immutable GitHub release assets.
 
+Pushes to the maintained `integration/next` review feed run both the source
+contract and full clean-clone distribution workflows. They produce
+commit-addressed review artifacts but never publish a release. Pushes to
+`master` run the same gates; tags and the deliberately restricted stable-version
+dispatch remain the only publication paths. A branch-head movement is review
+input, not artifact identity: every receipt and downstream consumer still binds
+the exact source commit.
+
 ## Clean-clone reproduction
 
 The canonical builder is Ubuntu 24.04 x86_64. It resolves every downloaded or

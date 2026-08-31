@@ -12,9 +12,10 @@
   harnesses implemented locally on 2026-08-30; tiered foliage ceilings,
   joined-region navigation/profile validation, opt-in pre-baked path collision,
   bounded HLOD cross-fades, and a 256-stop extended moving-residency fixture
-  implemented and locally verified on 2026-08-31; representative hardware,
-  calibration, physical-mobile, upstream-hosted, and actual rollback evidence
-  remain open
+  implemented and locally verified on 2026-08-31; both required clean-clone
+  workflows now run on the maintained `integration/next` review feed as well as
+  `master`; representative hardware, calibration, physical-mobile, and actual
+  rollback evidence remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -77,8 +78,11 @@ The implemented local release-candidate slice now includes:
   governance, profile/manifest invariants, and Python/shell parsing. A separate
   clean-clone distribution workflow resolves digest/commit-pinned Linux host
   tools, compiles both Web profiles in debug/release, runs full/core/extended
-  native regressions, packages and reverifies split bundles, retains PR review
+  native regressions, packages and reverifies split bundles, retains review
   artifacts, and publishes only a fully assembled immutable tagged prerelease.
+  Pull requests and pushes to `master` or the maintained `integration/next`
+  review feed run both workflows, so the no-PR integration lane cannot bypass
+  clean-clone evidence.
   Native builds still compile every full-profile MTerrain source while an
   explicit engine-class build profile bounds generated `godot-cpp` wrappers;
   this avoids host archive command-line limits without reducing the native
@@ -872,7 +876,8 @@ keep the release gate open.
   before a tag may publish. Pinned WebKit remains a retained non-blocking
   diagnostic. A green required run emits a
   candidate/source/module/template/browser-bound aggregate consumed by the
-  stable gate. Its first upstream green execution remains outstanding.
+  stable gate. Pushes to `integration/next` exercise this same required lane and
+  retain commit-addressed review artifacts without publishing a release.
 - The automatic tag publisher is deliberately prerelease-only and rejects a
   stable-looking tag. This prevents a green compile/hosted-correctness run from
   bypassing the still-external physical, calibrated-performance, and rollback

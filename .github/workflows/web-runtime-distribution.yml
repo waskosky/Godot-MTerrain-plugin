@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+      - integration/next
     tags:
       - web-runtime-v*
   workflow_dispatch:
