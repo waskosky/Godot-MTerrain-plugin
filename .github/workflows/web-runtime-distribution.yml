@@ -8,6 +8,11 @@ on:
     tags:
       - web-runtime-v*
   workflow_dispatch:
+    inputs:
+      distribution_version:
+        description: Exact final version for a pre-tag stable candidate (for example web-runtime-v0.2.0)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -35,11 +40,13 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 -m py_compile scripts/*.py tests/*.py
           bash -n scripts/*.sh
+          node --check tests/web_performance/evidence_bridge.js
+          node --check tests/web_rollback/evidence_bridge.js
 
       - name: Install host prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes cmake ninja-build python3-venv
+          sudo apt-get install --yes cmake ninja-build python3-venv xvfb
 
       - name: Restore exact Web toolchain
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -58,9 +65,21 @@ jobs:
           ./scripts/build_web.sh all web_extended
 
       - name: Package and independently verify the distribution
+        env:
+          REQUESTED_DISTRIBUTION_VERSION: ${{ inputs.distribution_version }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             distribution_version="$GITHUB_REF_NAME"
+          elif [[ -n "$REQUESTED_DISTRIBUTION_VERSION" ]]; then
+            if [[ "$GITHUB_REF" != refs/heads/master ]]; then
+              echo "A final-version stable candidate must be built from master."
+              exit 1
+            fi
+            if [[ ! "$REQUESTED_DISTRIBUTION_VERSION" =~ ^web-runtime-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "A stable candidate version must match web-runtime-vX.Y.Z."
+              exit 1
+            fi
+            distribution_version="$REQUESTED_DISTRIBUTION_VERSION"
           else
             distribution_version="commit-${GITHUB_SHA:0:12}"
           fi
@@ -74,6 +93,18 @@ jobs:
         with:
           name: mterrain-web-distribution-${{ github.sha }}
           path: build/distribution/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Retain exact side modules for hosted browser gates
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mterrain-web-raw-${{ github.sha }}
+          path: |
+            build/mterrain/MTerrain.gdextension
+            build/mterrain/*.wasm
+            build/mterrain/web_extended/*.wasm
+            build/receipts/*.json
           if-no-files-found: error
           retention-days: 30
 
@@ -110,17 +141,142 @@ jobs:
           export MTERRAIN_REQUIRE_CLEAN=1
           ./scripts/run_native_regression_builds.sh
 
+      - name: Retain exact native editor-load libraries for Web export
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mterrain-native-web-host-${{ github.sha }}
+          path: |
+            build/mterrain/native-web-core/*.so
+            build/mterrain/native-web-extended/*.so
+          if-no-files-found: error
+          retention-days: 30
+
+  hosted-browser-smoke:
+    name: Pinned exported browser correctness
+    needs:
+      - web-artifacts
+      - native-regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      MTERRAIN_CI_TOOLS: ${{ github.workspace }}/../mterrain-ci/browser-v1
+    steps:
+      - name: Check out the exact tested source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Download exact green Web inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mterrain-web-raw-${{ github.sha }}
+          path: build
+
+      - name: Download exact green native editor-load inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mterrain-native-web-host-${{ github.sha }}
+          path: build/mterrain
+
+      - name: Install template and browser prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes cmake ninja-build python3-venv
+
+      - name: Restore exact template and browser toolchain
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ${{ env.MTERRAIN_CI_TOOLS }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mterrain-browser-${{ hashFiles('tools/ci_toolchain.json', 'scripts/install_web_ci_toolchain.sh', 'scripts/build_web_export_template.sh') }}
+
+      - name: Resolve pinned browser and Web-template inputs
+        run: |
+          ./scripts/install_web_ci_toolchain.sh "$MTERRAIN_CI_TOOLS" browser
+          source "$MTERRAIN_CI_TOOLS/environment.sh"
+          sudo "$PLAYWRIGHT_CLI" install-deps chromium firefox webkit
+          ./scripts/build_web_export_template.sh "$MTERRAIN_CI_TOOLS"
+
+      - name: Export and exercise both runtime profiles
+        run: |
+          source "$MTERRAIN_CI_TOOLS/environment.sh"
+          template="build/web-template/godot.web.template_debug.wasm32.nothreads.dlink.zip"
+          for profile in web_core web_extended; do
+            if [[ "$profile" == web_core ]]; then
+              native="build/mterrain/native-web-core/libMTerrain.linux.template_debug.x86_64.nothreads.so"
+            else
+              native="build/mterrain/native-web-extended/libMTerrain.linux.template_debug.x86_64.nothreads.so"
+            fi
+            "$PLAYWRIGHT_PYTHON" scripts/export_web_smoke.py \
+              --godot "$GODOT_BIN" \
+              --template-debug "$template" \
+              --native-library "$native" \
+              --profile "$profile" \
+              --output "build/web-smoke-$profile"
+            for browser in chromium firefox; do
+              xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" \
+                "$PLAYWRIGHT_PYTHON" scripts/run_web_smoke.py \
+                --export-dir "build/web-smoke-$profile" \
+                --browser "$browser" \
+                --headed \
+                --browser-toolchain-receipt "$BROWSER_TOOLCHAIN_RECEIPT" \
+                --template-receipt build/receipts/web-template-debug.json \
+                --evidence-dir "build/evidence/$profile/$browser"
+            done
+          done
+          "$PLAYWRIGHT_PYTHON" scripts/record_web_hosted_correctness.py \
+            --evidence-dir build/evidence \
+            --build-receipts-dir build/receipts \
+            --template-receipt build/receipts/web-template-debug.json \
+            --browser-toolchain-receipt "$BROWSER_TOOLCHAIN_RECEIPT" \
+            --output build/evidence/hosted-correctness.json
+
+      - name: Retain pinned Playwright WebKit diagnostic
+        continue-on-error: true
+        run: |
+          source "$MTERRAIN_CI_TOOLS/environment.sh"
+          diagnostic_status=0
+          for profile in web_core web_extended; do
+            if ! "$PLAYWRIGHT_PYTHON" scripts/run_web_smoke.py \
+              --export-dir "build/web-smoke-$profile" \
+              --browser webkit \
+              --browser-toolchain-receipt "$BROWSER_TOOLCHAIN_RECEIPT" \
+              --template-receipt build/receipts/web-template-debug.json \
+              --evidence-dir "build/evidence/$profile/webkit-diagnostic"; then
+              diagnostic_status=1
+            fi
+          done
+          exit "$diagnostic_status"
+
+      - name: Retain browser and template receipts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mterrain-hosted-browser-evidence-${{ github.sha }}
+          path: |
+            build/evidence/**/*
+            build/receipts/web-template-debug.json
+          if-no-files-found: error
+          retention-days: 90
+
   publish-release:
     name: Publish immutable prerelease
     if: startsWith(github.ref, 'refs/tags/web-runtime-v')
     needs:
       - web-artifacts
       - native-regressions
+      - hosted-browser-smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - name: Keep stable-looking tags fail closed
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^web-runtime-v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "Stable tags require candidate-bound physical, calibration, and rollback evidence; this workflow publishes prereleases only."
+            exit 1
+          fi
+
       - name: Check out the tagged release contract
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

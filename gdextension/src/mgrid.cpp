@@ -57,6 +57,16 @@ void MGrid::clear() {
     _search_bound.clear();
     _last_search_bound.clear();
     _region_grid_bound.clear();
+    runtime_lod_revision = 0;
+    runtime_lod_min = -1;
+    runtime_lod_max = -1;
+    runtime_lod_max_neighbor_delta = 0;
+    runtime_lod_transition_edges = 0;
+    runtime_lod_visible_points = 0;
+    runtime_lod_camera_position = Vector3();
+    for(int32_t index=0; index < 8; index++){
+        runtime_lod_counts[index] = 0;
+    }
     is_dirty = false;
     uniforms_id.clear();
     has_normals = false;
@@ -288,8 +298,10 @@ void MGrid::update_search_bound() {
     MBound sb(_cam_pos, max_range, _size);
     _last_search_bound = _search_bound;
     _search_bound = sb;
+#ifndef MTERRAIN_BOUNDED_RUNTIME
     MBound rbl = region_bound_to_point_bound(current_region_bound);
     _search_bound.intersect(rbl);
+#endif
     if(_search_bound.left == _search_bound.right || _search_bound.top == _search_bound.bottom){
         _search_bound.grow(_grid_bound,1,1);
     }
@@ -395,11 +407,55 @@ void MGrid::update_lods() {
 ///////////////////////////////////////////////////////
 ////////////////// MERGE //////////////////////////////
 void MGrid::merge_chunks() {
+    runtime_lod_min = -1;
+    runtime_lod_max = -1;
+    runtime_lod_max_neighbor_delta = 0;
+    runtime_lod_transition_edges = 0;
+    runtime_lod_visible_points = 0;
+    runtime_lod_camera_position = _cam_pos_real;
+    for(int32_t index=0; index < 8; index++){
+        runtime_lod_counts[index] = 0;
+    }
     for(int32_t z=_search_bound.top; z<=_search_bound.bottom; z++){
         for(int32_t x=_search_bound.left; x<=_search_bound.right; x++){
             int8_t lod = points[z][x].lod;
-            MBound mb(x,z);
             int32_t region_id = get_region_id_by_point(x,z);
+            const bool region_loaded = runtime_region_is_loaded(region_id);
+            if(region_loaded && lod >= 0 && lod < 8){
+                runtime_lod_counts[lod]++;
+                runtime_lod_visible_points++;
+                runtime_lod_min = runtime_lod_min < 0
+                    ? lod
+                    : MIN(runtime_lod_min, (int32_t)lod);
+                runtime_lod_max = MAX(runtime_lod_max, (int32_t)lod);
+                if(x > _search_bound.left && points[z][x-1].lod >= 0 &&
+                    runtime_region_is_loaded(get_region_id_by_point(x-1,z))){
+                    const int32_t delta = Math::abs(
+                        (int32_t)lod-(int32_t)points[z][x-1].lod
+                    );
+                    runtime_lod_max_neighbor_delta = MAX(
+                        runtime_lod_max_neighbor_delta,
+                        delta
+                    );
+                    if(delta > 0){
+                        runtime_lod_transition_edges++;
+                    }
+                }
+                if(z > _search_bound.top && points[z-1][x].lod >= 0 &&
+                    runtime_region_is_loaded(get_region_id_by_point(x,z-1))){
+                    const int32_t delta = Math::abs(
+                        (int32_t)lod-(int32_t)points[z-1][x].lod
+                    );
+                    runtime_lod_max_neighbor_delta = MAX(
+                        runtime_lod_max_neighbor_delta,
+                        delta
+                    );
+                    if(delta > 0){
+                        runtime_lod_transition_edges++;
+                    }
+                }
+            }
+            MBound mb(x,z);
             #ifdef NO_MERGE
             check_bigger_size(lod,0, mb);
             num_chunks +=1;
@@ -418,6 +474,7 @@ void MGrid::merge_chunks() {
             #endif
         }
     }
+    runtime_lod_revision++;
 }
 
 //This will check if all lod in this bound are the same if not return false
@@ -579,12 +636,28 @@ int8_t MGrid::get_edge_num(const bool left,const bool right,const bool top,const
     if(!left && right && !top && bottom){
             return M_RB;
     }
+    if(left && right && !top && !bottom){
+            return M_LR;
+    }
+    if(!left && !right && top && bottom){
+            return M_TB;
+    }
+    if(left && right && top && !bottom){
+            return M_LRT;
+    }
+    if(left && right && !top && bottom){
+            return M_LRB;
+    }
+    if(left && !right && top && bottom){
+            return M_LTB;
+    }
+    if(!left && right && top && bottom){
+            return M_RTB;
+    }
     if(left && right && top && bottom){
             return M_LRTB;
     }
-    UtilityFunctions::print("Error Can not find correct Edge");
-    UtilityFunctions::print(left, " ", right, " ", top, " ", bottom);
-    return 0;
+    ERR_FAIL_V_MSG(M_MAIN, "Invalid terrain LOD edge combination");
 }
 
 void MGrid::create_ordered_instances_distance(){
@@ -992,10 +1065,10 @@ bool MGrid::runtime_unload_region(int32_t region_id) {
         for(int32_t x=point_left; x<point_right; x++){
             MPoint& point = points[z][x];
             if(point.has_instance && point.instance.is_valid()){
-                RenderingServer::get_singleton()->instance_geometry_set_material_override(
-                    point.instance,
-                    RID()
-                );
+                RenderingServer::get_singleton()->free_rid(point.instance);
+                point.instance = RID();
+                point.mesh = RID();
+                point.has_instance = false;
             }
         }
     }
@@ -1074,6 +1147,29 @@ uint64_t MGrid::runtime_estimated_region_bytes(int32_t region_id) const {
         return 0;
     }
     return regions[region_id].get_estimated_runtime_bytes();
+}
+
+Dictionary MGrid::runtime_lod_snapshot() const {
+    std::lock_guard<std::mutex> lock(update_chunks_mutex);
+    Dictionary result;
+    result["kind"] = "mterrain-runtime-visual-lod/v1";
+    result["revision"] = runtime_lod_revision;
+    result["camera_position"] = runtime_lod_camera_position;
+    result["terrain_offset"] = offset;
+    result["minimum_lod"] = runtime_lod_min;
+    result["maximum_lod"] = runtime_lod_max;
+    result["maximum_supported_lod"] = _chunks.sizes.is_empty()
+        ? -1
+        : _chunks.max_lod;
+    result["maximum_neighbor_delta"] = runtime_lod_max_neighbor_delta;
+    result["transition_edges"] = runtime_lod_transition_edges;
+    result["visible_points"] = runtime_lod_visible_points;
+    PackedInt32Array counts;
+    for(int32_t index=0; index < 8; index++){
+        counts.push_back(runtime_lod_counts[index]);
+    }
+    result["lod_counts"] = counts;
+    return result;
 }
 
 MImage* MGrid::get_image_by_pixel(uint32_t x,uint32_t y, const int32_t index){

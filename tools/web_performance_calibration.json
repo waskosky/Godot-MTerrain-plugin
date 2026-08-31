@@ -1,0 +1,7 @@
+{
+  "approved_evidence_sha256": [],
+  "release_gate_eligible": false,
+  "schema": "mterrain-web-performance-calibration-v1",
+  "status": "post_build_candidate_bound_approval_required",
+  "threshold_contract_sha256": "85efb7c824b68061ebaf7da94a11abd4711a976bc324b1c3d0b782aaee3d9098"
+}

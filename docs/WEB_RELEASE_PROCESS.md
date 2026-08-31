@@ -8,7 +8,10 @@ published only as CI review artifacts or immutable GitHub release assets.
 
 The canonical builder is Ubuntu 24.04 x86_64. It resolves every downloaded or
 source-built tool through `tools/ci_toolchain.json`, validates those values
-against the two Web toolchain contracts, and refuses dirty source trees.
+against the two Web toolchain contracts, and refuses dirty source trees. The
+same contract now pins the Godot source used for the no-thread dynamic-link
+export template and the Playwright wheels/browser revisions used by hosted
+correctness CI.
 
 ```sh
 git clone --recurse-submodules \
@@ -58,6 +61,37 @@ generated `godot-cpp` wrapper set is constrained by
 uses. This keeps the Linux static archive below host command-line limits without
 removing an MTerrain subsystem or changing the shipped native class registry.
 
+## Dynamic-link template and hosted browser reproduction
+
+The export template is built from the exact Godot 4.7 stable commit rather than
+coming from an unrecorded editor cache. On Ubuntu 24.04 with Python 3.12:
+
+```sh
+BROWSER_TOOLS="$(mktemp -d)/mterrain-browser"
+./scripts/install_web_ci_toolchain.sh "$BROWSER_TOOLS" browser
+source "$BROWSER_TOOLS/environment.sh"
+sudo "$PLAYWRIGHT_CLI" install-deps chromium firefox webkit
+./scripts/build_web_export_template.sh "$BROWSER_TOOLS"
+```
+
+The result is
+`build/web-template/godot.web.template_debug.wasm32.nothreads.dlink.zip` and an
+`mterrain-web-template-receipt-v1` binding its Godot source tree, Emscripten,
+SCons, build arguments, archive members, and digest. The browser installer emits
+an `mterrain-browser-toolchain-receipt-v2` with exact wheel inputs, Playwright
+browser revisions, launcher digests, and complete installed-tree digests.
+Neither compiled template nor browser cache is committed.
+
+The distribution workflow downloads only the already-green native and Web
+artifacts, builds that template, exports both profiles, and requires headed
+virtual-display Chromium and Firefox passes against real no-thread dynamic-link
+exports. It emits one `mterrain-web-hosted-correctness-evidence-v1` aggregate
+binding those four reports to the source, debug side modules, template receipt,
+browser-toolchain receipt, and headed state. The pinned Playwright WebKit run is
+retained separately as a non-blocking diagnostic because its Linux engine emits
+framebuffer feedback errors with this Godot Web renderer. It is not Safari
+product evidence, and hosted software rendering is not performance evidence.
+
 ## Published assets
 
 Each release contains:
@@ -73,6 +107,11 @@ Each release contains:
 - one machine-readable `mterrain-web-release-index-v1` document binding source,
   target, runtime contract, profile, artifact, companion, receipt, and bundle
   digests;
+- the versioned performance-budget, provisional calibration template, and
+  stable-lane gate contracts inside both bundles and digest-bound by that
+  release index;
+- the exact traversal script, evidence bridge, scene, and project sources used
+  by the candidate-bound performance gate;
 - `SHA256SUMS` covering both bundles, the runtime contract, and release index.
 
 Always begin with the release index. Verify a downloaded directory without
@@ -88,7 +127,11 @@ gh release verify-asset web-runtime-v0.1.0-rc.2 \
 The GitHub repository has release immutability enabled. The release workflow
 creates a draft, attaches every asset, publishes once both Web and native jobs
 are green, then verifies the generated release attestation and every local
-asset. Published tags and assets therefore cannot be moved or replaced.
+asset. Published tags and assets therefore cannot be moved or replaced. This
+automatic lane accepts only `web-runtime-vX.Y.Z-rc.N` names and fails a
+stable-looking tag explicitly; stable publication must first supply the
+candidate-bound physical, calibration, and rollback evidence to a reviewed
+promotion lane.
 
 ## Project integration
 
@@ -117,24 +160,163 @@ Treat a complete profile archive as the atomic unit:
 5. To roll back, repeat steps 2–4 with the retained prior archive; never copy an
    old wasm file over a newer manifest or companion in place.
 
-`web-runtime-v0.1.0-rc.1` remains the immutable prior-artifact baseline and
+`web-runtime-v0.1.0-rc.1` is the initial immutable rollback baseline and
 `web-runtime-v0.1.0-rc.2` is the first candidate with a standalone runtime
-contract. Retain and verify both complete releases. This establishes a real
-cross-version artifact rollback pair; a stable claim still requires an actual
-candidate-to-prior project restoration followed by the same load, height, seam,
-collision, eviction, and nonblank-frame smokes on representative hardware.
+contract. Retain and verify both complete releases. For the next stable
+candidate, `tools/web_release_gate.json` names `rc.2` as the required prior
+release; the final verifier loads those exact assets and matches their digests.
+A stable claim still requires an actual candidate-to-`rc.2` project restoration
+followed by the same load, height, seam, collision, eviction, and nonblank-frame
+smokes on representative hardware.
+
+Prepare an actual whole-bundle candidate-to-prior session with matching native
+editor-load libraries and the receipt-matched template:
+
+```sh
+python3 scripts/prepare_web_rollback_gate.py \
+  --candidate-dir /verified/candidate-assets \
+  --prior-dir /verified/web-runtime-v0.1.0-rc.2-assets \
+  --candidate-native-library /matching/candidate/libMTerrain.so \
+  --prior-native-library /matching/prior/libMTerrain.so \
+  --godot "$GODOT_BIN" \
+  --template-debug build/web-template/godot.web.template_debug.wasm32.nothreads.dlink.zip \
+  --template-receipt build/receipts/web-template-debug.json \
+  --profile web_core
+
+python3 scripts/serve_web_rollback_gate.py \
+  --session-dir build/rollback/SESSION_ID \
+  --bind 0.0.0.0
+```
+
+Open and download the candidate capture first, then restore/open/download the
+prior capture on the same named browser/device. Normalize them with
+`record_web_rollback_evidence.py`. The recorder rejects mixed sessions,
+file-level substitutions, reversed order, changed browser/GPU identity, blank
+frames, software renderers, console/page errors, or bundle/context digest drift.
+The final gate rechecks the physical origin, operator attestation, ordered
+timestamps, session/template digests, renderer class, and candidate bundle/index
+binding rather than trusting the recorder's `passed` flag alone. It also requires
+`--prior-dir` and independently verifies that immutable prior release before
+matching its release-index and profile-bundle digests to every rollback result.
+Run a separate `--profile web_extended` session with its matching native
+libraries before making an extended-profile stable claim; that baseline also
+loads and checks the packaged companion.
+
+## Representative performance and stable gate
+
+`tests/web_performance` runs a fixed 256-stop moving-residency route under an
+eight-region visual and one-region collision ceiling. It records startup,
+first-tile/collision, frame percentiles, longest frame, recovery, region/memory
+maxima, the runtime's exact ten closed per-phase timing counters, and a separate
+longest scheduler-step budget. Export it with
+`--fixture performance` with the exact debug build and template receipts:
+
+```sh
+python3 scripts/export_web_smoke.py \
+  --fixture performance \
+  --profile web_core \
+  --godot "$GODOT_BIN" \
+  --template-debug build/web-template/godot.web.template_debug.wasm32.nothreads.dlink.zip \
+  --template-receipt build/receipts/web-template-debug.json \
+  --build-receipt /verified/web_core/receipts/web-template_debug.json \
+  --bundle-root /verified/web_core \
+  --native-library /matching/native/libMTerrain.so
+```
+
+The exported page provides a **Download MTerrain evidence** button so actual
+Safari and physical Android/iOS browsers can produce bounded capture JSON
+without pretending Playwright WebKit is Safari. Its downloaded context binds
+the selected profile, source, side-module/build receipt, template receipt,
+candidate-shipped fixture-source hashes, deterministic gzip size of every
+production runtime-export file, and threshold contract; normalization rejects a
+capture/receipt mismatch, blank or software-rendered frame, or recorded HTTP
+failure. Instrumentation files are explicitly excluded from the production
+payload total.
+
+Normalize a downloaded capture with `record_web_device_evidence.py`. The
+release-lane contract in `tools/web_release_gate.json` requires headed physical
+Chrome/Chromium, Firefox, Safari, Android Chrome, and iOS Safari separately.
+`tools/web_performance_budgets.json` holds the fixed fixture and thresholds.
+`tools/web_performance_calibration.json` is deliberately a provisional template
+inside the candidate bundles. Do not edit it to approve a candidate and rebuild:
+that would change the source/index identity after the measurements were made.
+Instead, after the immutable candidate and passing normalized evidence exist,
+create a post-build approval receipt with explicit reviewed inputs:
+
+```sh
+python3 scripts/approve_web_performance_calibration.py \
+  --candidate-dir /verified/web-runtime-vNEXT-assets \
+  --operator "REVIEWER" \
+  --evidence build/evidence/web-performance-web_core-headed_chrome_desktop.json \
+  --evidence build/evidence/web-performance-web_core-headed_firefox_desktop.json \
+  --evidence /path/to/each/additional/profile-and-lane-result.json \
+  --output build/evidence/web-performance-calibration-approved.json
+```
+
+The approver independently verifies each result against the candidate's exact
+source, build receipt, side module, threshold contract, and lane. The resulting
+receipt binds the reviewed evidence digests back to the immutable candidate
+release-index digest. It is release evidence, not a source input, which prevents
+both evidence/budget hash self-reference and a rebuild-after-approval loop.
+Audit the current state or fail closed for a stable promotion with:
+
+```sh
+python3 scripts/verify_web_release_gate.py
+python3 scripts/verify_web_release_gate.py \
+  --candidate-dir /verified/web-runtime-vNEXT-assets \
+  --prior-dir /verified/web-runtime-v0.1.0-rc.2-assets \
+  --candidate-version web-runtime-vNEXT \
+  --calibration build/evidence/web-performance-calibration-approved.json \
+  --require-stable
+```
+
+The second command independently verifies the candidate packages and must stay
+red while the verified prior release, matching hosted aggregate, a named hardware
+lane, calibration digest, or whole-bundle rollback receipt is absent. It also rejects evidence
+whose source, build receipt, side module, release index, bundle, budget, or gate
+contract does not match that candidate. It also rejects a calibration approval
+that targets another release index or does not list the selected evidence. Core
+and extended stable claims are evaluated independently; pass
+`--profile web_extended` for the latter.
 
 ## Maintainer publication sequence
 
-1. Merge the release change to `master` only after source-contract and
-   distribution workflows are green.
-2. Create the annotated release tag on that exact `origin/master` commit and
-   push it without force.
-3. Let the tag workflow rebuild rather than uploading local binaries.
-4. Require the Web artifact and native regression jobs before the draft may
-   publish.
-5. Verify the release is marked immutable and download/verify every asset.
+For a release candidate, merge to `master`, create its annotated `-rc.N` tag,
+and let the automatic tag workflow rebuild, publish as a prerelease, and attest
+the assets.
+
+For a stable version, the artifact identity must exist before physical evidence:
+
+1. Dispatch `web-runtime-distribution.yml` on `master` with
+   `distribution_version=web-runtime-vX.Y.Z`. This builds the final-named
+   candidate once, retains its exact packages for 90 days, and produces the
+   candidate-bound hosted aggregate; it does not publish.
+2. Download that exact distribution and hosted evidence. Run the physical
+   performance and candidate-to-verified-`rc.2` rollback lanes without renaming
+   or rebuilding any candidate asset.
+3. Create the post-build calibration receipt, then require both independent
+   profile gates to pass.
+4. Assemble and reverify the exact publishable candidate/evidence set:
+
+   ```sh
+   python3 scripts/prepare_web_stable_promotion.py \
+     --candidate-dir /verified/web-runtime-vX.Y.Z-assets \
+     --prior-dir /verified/web-runtime-v0.1.0-rc.2-assets \
+     --evidence-dir build/evidence \
+     --calibration build/evidence/web-performance-calibration-approved.json
+
+   python3 scripts/prepare_web_stable_promotion.py \
+     --verify-dir build/stable-promotion/web-runtime-vX.Y.Z \
+     --prior-dir /verified/web-runtime-v0.1.0-rc.2-assets
+   ```
+
+5. Review the promotion manifest and checksums, create the stable tag on the
+   exact commit named by its candidate release index, and publish the staged
+   assets without rebuilding or renaming them. GitHub release attestation and
+   immutability remain required.
 6. Advance consumers by exact release commit and bundle/index digest.
 
 `web-runtime-v0.1.0-rc.2` is a prerelease. Stable support additionally requires
-the headed and physical-device gates in `WEB_SUPPORT_MATRIX.md`.
+the headed, calibrated-performance, whole-bundle rollback, and physical-device
+gates in `WEB_SUPPORT_MATRIX.md`; the automatic prerelease publisher cannot
+bypass that promotion sequence.

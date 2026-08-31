@@ -71,6 +71,20 @@ private:
         WORK_ROLLBACK_APPLY = 7,
     };
 
+    enum TimingPhase : int32_t {
+        TIMING_REGION_LOAD = 0,
+        TIMING_PREFLIGHT = 1,
+        TIMING_WRITE_HEIGHTS = 2,
+        TIMING_GENERATE_NORMALS = 3,
+        TIMING_TEXTURE_APPLY = 4,
+        TIMING_COLLISION = 5,
+        TIMING_EVICTION = 6,
+        TIMING_ROLLBACK_HEIGHTS = 7,
+        TIMING_ROLLBACK_NORMALS = 8,
+        TIMING_ROLLBACK_APPLY = 9,
+        TIMING_PHASE_COUNT = 10,
+    };
+
     struct TileWork {
         String key;
         int64_t revision = 0;
@@ -152,6 +166,9 @@ private:
     uint64_t collision_apply_count = 0;
     uint64_t step_count = 0;
     uint64_t longest_step_usec = 0;
+    uint64_t phase_total_usec[TIMING_PHASE_COUNT] = {};
+    uint64_t phase_longest_usec[TIMING_PHASE_COUNT] = {};
+    uint64_t phase_invocation_count[TIMING_PHASE_COUNT] = {};
 
     Dictionary fail(const String& p_code, const String& p_message) const;
     Dictionary validate_and_build_work(
@@ -194,6 +211,8 @@ private:
     bool process_one_eviction();
     bool process_one_collision_operation();
     String phase_name(WorkPhase p_phase) const;
+    String timing_phase_name(TimingPhase p_phase) const;
+    Dictionary phase_timing_snapshot() const;
 };
 
 #endif

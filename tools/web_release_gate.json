@@ -1,0 +1,82 @@
+{
+  "hosted_correctness": {
+    "aggregate_required": true,
+    "browsers": [
+      "playwright_chromium",
+      "playwright_firefox"
+    ],
+    "profiles": [
+      "web_core",
+      "web_extended"
+    ],
+    "required": true,
+    "schema": "mterrain-web-hosted-correctness-evidence-v1"
+  },
+  "schema": "mterrain-web-release-gate-v1",
+  "stable_profiles": {
+    "web_core": {
+      "performance_lanes": {
+        "android_chrome": {
+          "browser_products": [
+            "google_chrome_android"
+          ],
+          "budget_profile": "mobile_balanced",
+          "environment_kind": "physical_android",
+          "headed": true,
+          "physical_device": true
+        },
+        "headed_chrome_desktop": {
+          "browser_products": [
+            "google_chrome",
+            "chromium"
+          ],
+          "budget_profile": "desktop_balanced",
+          "environment_kind": "headed_desktop",
+          "headed": true,
+          "physical_device": true
+        },
+        "headed_firefox_desktop": {
+          "browser_products": [
+            "mozilla_firefox"
+          ],
+          "budget_profile": "desktop_balanced",
+          "environment_kind": "headed_desktop",
+          "headed": true,
+          "physical_device": true
+        },
+        "ios_safari": {
+          "browser_products": [
+            "apple_mobile_safari"
+          ],
+          "budget_profile": "mobile_balanced",
+          "environment_kind": "physical_ios",
+          "headed": true,
+          "physical_device": true
+        },
+        "safari_macos": {
+          "browser_products": [
+            "apple_safari"
+          ],
+          "budget_profile": "desktop_balanced",
+          "environment_kind": "headed_desktop",
+          "headed": true,
+          "physical_device": true
+        }
+      },
+      "rollback": {
+        "prior_version": "web-runtime-v0.1.0-rc.2",
+        "required_lanes": [
+          "headed_chrome_desktop",
+          "headed_firefox_desktop",
+          "safari_macos",
+          "android_chrome",
+          "ios_safari"
+        ]
+      }
+    },
+    "web_extended": {
+      "inherits_lane_shape_from": "web_core",
+      "stable_claim_is_independent": true
+    }
+  }
+}

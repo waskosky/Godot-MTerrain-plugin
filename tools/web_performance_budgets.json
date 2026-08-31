@@ -1,0 +1,50 @@
+{
+  "fixture": {
+    "route_region_side": 8,
+    "route_repetitions": 4,
+    "route_stops": 256,
+    "runtime_profiles": [
+      "web_core",
+      "web_extended"
+    ],
+    "sample_ops_per_step": 512,
+    "region_ops_per_step": 1
+  },
+  "profiles": {
+    "desktop_balanced": {
+      "maximum_collision_regions": 1,
+      "maximum_compressed_runtime_export_bytes": 14680064,
+      "maximum_compressed_side_module_bytes": 200000,
+      "maximum_estimated_region_bytes": 33554432,
+      "maximum_eviction_recovery_ms": 2000.0,
+      "maximum_first_collision_ms": 1500.0,
+      "maximum_first_tile_ms": 1500.0,
+      "maximum_javascript_heap_bytes": 536870912,
+      "maximum_longest_frame_ms": 100.0,
+      "maximum_p50_frame_ms": 20.0,
+      "maximum_p95_frame_ms": 33.4,
+      "maximum_p99_frame_ms": 50.0,
+      "maximum_resident_regions": 8,
+      "maximum_scheduler_step_ms": 33.4,
+      "maximum_startup_ms": 5000.0
+    },
+    "mobile_balanced": {
+      "maximum_collision_regions": 1,
+      "maximum_compressed_runtime_export_bytes": 14680064,
+      "maximum_compressed_side_module_bytes": 200000,
+      "maximum_estimated_region_bytes": 33554432,
+      "maximum_eviction_recovery_ms": 4000.0,
+      "maximum_first_collision_ms": 3000.0,
+      "maximum_first_tile_ms": 3000.0,
+      "maximum_javascript_heap_bytes": 402653184,
+      "maximum_longest_frame_ms": 200.0,
+      "maximum_p50_frame_ms": 25.0,
+      "maximum_p95_frame_ms": 50.0,
+      "maximum_p99_frame_ms": 80.0,
+      "maximum_resident_regions": 8,
+      "maximum_scheduler_step_ms": 50.0,
+      "maximum_startup_ms": 10000.0
+    }
+  },
+  "schema": "mterrain-web-performance-budgets-v1"
+}

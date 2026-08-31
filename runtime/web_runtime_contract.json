@@ -23,6 +23,10 @@
         "maximum_sample_ops_per_step": 16384,
         "maximum_texture_array_layers": 16,
         "maximum_texture_dimension": 2048,
+        "maximum_terrain_quads_per_axis": 256,
+        "maximum_terrain_regions": 1024,
+        "maximum_terrain_topology_points": 65536,
+        "maximum_visual_range_quads": 128,
         "minimum_sample_ops_per_step": 128
       },
       "height_formats": [
@@ -40,12 +44,15 @@
         "height_tile_release": true,
         "heightfield_collision": true,
         "heightfield_terrain": true,
+        "phase_timing_metrics": true,
         "runtime_material_configuration": true,
         "runtime_memory_only": true,
         "runtime_state_snapshot": true,
+        "scheduler_owned_visual_residency": true,
         "single_threaded": true,
         "visual_lod": true
       },
+      "phase_timing_contract": "mterrain-runtime-phase-timings/v1",
       "required_methods": [
         "apply_height_tile",
         "cancel_runtime_work",
@@ -68,6 +75,7 @@
         "take_runtime_work_result"
       ],
       "state_contract": "mterrain-runtime-state/v2",
+      "visual_lod_contract": "mterrain-runtime-visual-lod/v1",
       "unsupported_capabilities": {
         "foliage": false,
         "foliage_collision": false,

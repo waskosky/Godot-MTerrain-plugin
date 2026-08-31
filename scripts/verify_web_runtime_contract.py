@@ -139,6 +139,7 @@ def verify() -> str:
         if f'capabilities["build_profile"] = "{profile}";' not in implementation:
             fail(f"native build-profile capability drift for {profile}")
     for required_define in (
+        "MTERRAIN_BOUNDED_RUNTIME",
         "MTERRAIN_MEMORY_ONLY_DEFAULT",
         "MTERRAIN_SINGLE_THREADED",
     ):
@@ -171,6 +172,22 @@ def verify() -> str:
         fail("native state contract drift")
     if 'result["kind"] = "mterrain-runtime-state/v2"' not in scheduler:
         fail("native state implementation drift")
+    if core.get("phase_timing_contract") != "mterrain-runtime-phase-timings/v1":
+        fail("native phase-timing contract drift")
+    for marker in (
+        'metrics["phase_timing_contract"] = "mterrain-runtime-phase-timings/v1"',
+        'result["phase_usec"] = phase_usec',
+        'metrics["phase_timings"] = phase_timing_snapshot()',
+    ):
+        if marker not in scheduler:
+            fail("native phase-timing implementation drift")
+    if core.get("visual_lod_contract") != "mterrain-runtime-visual-lod/v1":
+        fail("native visual-LOD contract drift")
+    grid = (ROOT / "gdextension" / "src" / "mgrid.cpp").read_text(
+        encoding="utf-8"
+    )
+    if 'result["kind"] = "mterrain-runtime-visual-lod/v1"' not in grid:
+        fail("native visual-LOD implementation drift")
 
     native_capabilities = require_mapping(
         core.get("required_capabilities"),
@@ -230,6 +247,17 @@ def verify() -> str:
     ):
         if f'material_limits["{key}"] = {hard_limits.get(key)};' not in implementation:
             fail(f"native material limit drift for {key}")
+    topology_markers = {
+        "maximum_terrain_quads_per_axis": "WEB_MAX_TERRAIN_QUADS_PER_AXIS",
+        "maximum_terrain_topology_points": "WEB_MAX_TERRAIN_TOPOLOGY_POINTS",
+        "maximum_terrain_regions": "WEB_MAX_TERRAIN_REGIONS",
+        "maximum_visual_range_quads": "WEB_MAX_VISUAL_RANGE_QUADS",
+    }
+    for key, constant in topology_markers.items():
+        if f"{constant} = {hard_limits.get(key)}" not in implementation:
+            fail(f"native topology limit drift for {key}")
+        if f'topology_limits["{key}"]' not in implementation:
+            fail(f"native published topology limit drift for {key}")
     if "surface_layer_count > 4" not in material:
         fail("native material enforcement drift")
 

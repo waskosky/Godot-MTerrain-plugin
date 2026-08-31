@@ -26,8 +26,14 @@
 #define M_RT 6
 #define M_LB 7
 #define M_RB 8
-#define M_LRTB 9
-#define M_MAX_EDGE 10
+#define M_LR 9
+#define M_TB 10
+#define M_LRT 11
+#define M_LRB 12
+#define M_LTB 13
+#define M_RTB 14
+#define M_LRTB 15
+#define M_MAX_EDGE 16
 
 #define HEIGHTMAP_NAME StringName("heightmap")
 #define NORMALS_NAME StringName("normals")

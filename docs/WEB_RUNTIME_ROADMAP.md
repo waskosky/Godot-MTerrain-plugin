@@ -5,8 +5,13 @@
   builds, native regressions, split distribution bundles, and immutable
   prerelease automation added for `web-runtime-v0.1.0-rc.1` and a
   machine-readable, release-bound runtime contract prepared for
-  `web-runtime-v0.1.0-rc.2` on 2026-08-25;
-  representative hardware and physical-mobile stable-release gates remain open
+  `web-runtime-v0.1.0-rc.2` on 2026-08-25; phase timing, LOD/recreate/seam
+  fixtures, a pinned source-built export template, hosted-browser workflow,
+  fixed traversal capture, candidate-bound external-evidence verifier, hosted
+  evidence aggregation, and independent core/extended whole-bundle rollback
+  harnesses implemented locally on 2026-08-30; representative hardware,
+  calibration, physical-mobile, upstream-hosted, and actual rollback evidence
+  remain open
 - Primary target: Godot 4.7 stable, wasm32, Compatibility renderer, WebGL2,
   single-threaded GDExtension
 - Secondary target: explicitly hosted threaded Web diagnostics
@@ -97,8 +102,17 @@ The implemented local release-candidate slice now includes:
   per-region texture installation, sample- and region-budgeted rollback after
   partial writes/uploads, deterministic LRU eviction, bounded managed-region
   accounting without whole-grid scans, resident-region/estimated-byte ceilings,
-  and closed-cardinality timing/count metrics. The immediate API remains an
+  and closed-cardinality timing/count metrics. Ten fixed timing categories now
+  report per-step deltas plus cumulative/longest/invocation totals, and the
+  latest visual update reports a bounded LOD histogram/range, transition count,
+  adjacent-level delta, camera, and terrain offset. The immediate API remains an
   idle-queue compatibility wrapper over that scheduler.
+- Bounded profiles load no implicit camera region during grid creation. Scheduler
+  load/unload is the sole visual-region owner, unloaded regions release their
+  mesh instances immediately, and the visual search can follow scheduler-loaded
+  regions beyond the creation camera. Topology fails before allocation above 256
+  quads per axis, 65,536 points, or 1,024 regions; visual range is capped at 128
+  quads.
 - `runtime_memory_only` is mandatory in `web_core`; it cannot be disabled, and
   explicit save, editor directory creation, destructive layer-file operations,
   and eviction-time legacy saves fail closed. Packed read-only resources may
@@ -112,42 +126,102 @@ The implemented local release-candidate slice now includes:
   continuous normals; raycast collision on both sides of the region/tile seam;
   exercise bounded texture-array/splat material configuration; release all RIDs
   and buffers; and perform a deterministic three-stop teleport under a two-tile,
-  two-region LRU ceiling.
-- Playwright Chromium, Firefox, and WebKit load both profiles with WebGL2,
-  wasm32, no threads, the expected API v2 capability tuple, a nonblank directly
-  captured framebuffer, and no console, page, or request errors. The extended
+  two-region LRU ceiling. The current fixtures additionally reject a mismatched
+  shared edge before mutation, cycle deterministic near/far LOD promotion and
+  demotion, reach maximum LOD, validate adjacent-level deltas, and destroy then
+  recreate terrain at a negative world offset. Exercising the maximum exposed a
+  shared native/Web edge-stitch gap; all 16 left/right/top/bottom combinations
+  are now generated rather than silently using the main mesh for a three-edge
+  case.
+- A 256-stop, four-pass snake traversal fixture maintains eight visual regions
+  and one near-focus collision region, emits fixed scheduler/LOD/memory maxima,
+  and can download sanitized browser captures from real product browsers. Each
+  export embeds a context binding its profile, build receipt, side module,
+  source-built template receipt, exact traversal/bridge/project source hashes,
+  deterministic per-file gzip size for the complete production runtime export,
+  and threshold contract; the physical-evidence recorder rejects any mismatch.
+  Those fixture sources also ship inside the candidate bundle, allowing the
+  stable verifier to compare them to the measured context. The same fixture and
+  budgets apply independently to core and extended profiles and record the
+  selected profile.
+  `web_performance_budgets.json` contains deliberately provisional desktop and
+  mobile thresholds. Bundles retain a provisional
+  `web_performance_calibration.json` template. After the immutable candidate and
+  physical evidence exist, `approve_web_performance_calibration.py` emits a
+  separate receipt binding reviewed evidence-file digests to that candidate's
+  release-index digest. This avoids both a self-referential evidence/budget hash
+  and an impossible rebuild-after-approval loop; the release verifier cannot
+  accept the thresholds until that post-build receipt is supplied.
+- Godot 4.7's exact source commit and Playwright 1.62.0 wheel/browser inputs are
+  pinned, including full Linux installation-tree digests rather than
+  launcher-only hashes. A repository builder emits immutable template/browser
+  receipts. Hosted CI now builds the no-thread dlink template before exporting
+  and probing both profiles in headed Chromium and Firefox under a virtual
+  display. A checked aggregator binds those four nonblank/error-free smokes and
+  their headed state to the exact source, debug side modules, template receipt,
+  and browser-toolchain receipt; the stable verifier requires that aggregate
+  from the verified candidate. Pinned Playwright WebKit is retained as a
+  non-blocking diagnostic: its current Linux engine reaches the fixture marker
+  and nonblank frame but emits framebuffer feedback errors. Actual Safari is a
+  separate physical gate. The first upstream hosted run is still required
+  evidence; configuration alone is not a pass or hardware-performance evidence.
+- The rollback harness independently verifies and safely extracts complete
+  candidate/prior archives, binds their manifest/material/side-module/native and
+  template hashes into one ordered session, exports a cross-candidate API v2
+  baseline, and records only candidate-then-prior captures from the same named
+  physical browser/GPU. Core and extended sessions are independent; the extended
+  baseline also loads its packaged companion and checks its capability contract.
+  The stable verifier independently requires the physical origin, operator,
+  ordered timestamps, session-manifest digest, template digests, and a
+  non-software renderer in every normalized result. It also verifies the named
+  immutable prior release directory and matches its release-index/profile-bundle
+  digests, instead of accepting a claimed prior version string. No actual
+  representative rollback receipt has yet been produced. The bounded rollback
+  fixture itself is locally green in headed Chromium 151 and Firefox 153 for
+  both profiles; that proves the harness path, not cross-version restoration on
+  representative hardware.
+- Playwright Chromium and Firefox load both profiles with WebGL2, wasm32, no
+  threads, the expected API v2 capability tuple, a nonblank directly captured
+  framebuffer, and no console, page, request, or HTTP errors. The extended
   fixture additionally stages and releases bounded foliage, precomputed
-  navigation, baked paths, and mesh-only HLOD. Page and direct framebuffer
-  captures remain separate because some headless WebKit builds return a black
-  compositor screenshot despite healthy WebGL pixels. These are local automated
-  correctness checks, not headed-hardware or physical-device support claims.
+  navigation, baked paths, and mesh-only HLOD. WebKit currently reaches the same
+  marker and nonblank framebuffer but fails the strict error gate as described
+  above. These are automated correctness checks, not headed-hardware or
+  physical-device support claims.
 - Binaryen inspection records the artifact feature set and rejects thread or
   shared-memory requirements. In the fresh local release-candidate build, core
-  debug/release side modules are 935,616/904,714 raw bytes and
-  138,987/138,084 bytes at Brotli quality 11; extended side modules are
-  935,922/905,020 raw and 139,049/138,202 compressed. The extended profile also
+  debug/release side modules are 931,933/904,382 raw bytes and
+  139,334/138,809 bytes at Brotli quality 11; extended side modules are
+  932,239/904,704 raw and 139,576/138,913 compressed. The current production
+  debug export totals 11,691,852 deterministic-gzip bytes for core and
+  11,716,450 for extended, excluding evidence instrumentation. The extended
+  profile also
   packages a separately hashed 33,220-byte companion script. The tagged clean-CI
   receipts and release index remain authoritative rather than these local
   measurements.
 
 The remaining gaps are deliberately material:
 
-1. The bounded scheduler and LRU behavior have deterministic local proofs, but a
-   long traversal/teleport route still needs p50/p95/p99 frame time, worst-stall,
-   heap/RID, and steady-state recovery evidence on representative hardware.
-2. Exact per-phase timing remains incomplete: the runtime exposes total step and
-   count metrics, but validation, normal generation, texture apply, collision,
-   and eviction require separately recorded timings before budget tuning.
-3. Equal-detail tile/region seams are covered. One-level/max LOD transitions,
-   negative offsets, repeated promotion/demotion, deliberate border-mismatch
-   rejection, and destroy/recreate recovery remain open fixtures.
-4. Clean-clone Web compile/package CI, native regressions, immutable prerelease
-   publication, and the support/capability matrix are present. Browser export
-   remains a local automated gate because the pinned dynamic-link template is
-   deliberately not hidden inside a generic CI dependency; hosted browser CI is
-   still open.
+1. The fixed long traversal and closed measurements now exist, but their
+   provisional budgets need p50/p95/p99 frame time, worst-stall, heap/RID, and
+   steady-state recovery calibration on every named representative lane.
+2. Per-phase runtime timing and the missing LOD/offset/border/recreate fixtures
+   are locally green. They still need the pinned Web builds and newly added
+   hosted workflow to pass from a clean upstream checkout.
+3. Hosted browser export and aggregate verification are implemented with a
+   source-built, receipt-bound dynamic-link template. The first upstream headed
+   Chromium/Firefox run remains open evidence and, even when green, is
+   correctness rather than hardware performance or Safari-product evidence.
+   Playwright WebKit remains a pinned diagnostic until its Godot/WebGL errors
+   are fixed; it is not allowed to stand in for Safari.
+4. Ordered core and extended whole-bundle rollback paths now exist, but each
+   stable profile claim still needs candidate-to-`web-runtime-v0.1.0-rc.2`
+   captures on every required physical browser lane. The verifier binds evidence
+   to a verified candidate release index/bundle and correctly reports all such
+   receipts absent today.
 5. Headed Chrome, Firefox, and Safari plus physical Android- and iOS-class device
-   evidence remain mandatory before a browser release claim.
+   evidence remain mandatory before a browser release claim. Budgets cannot be
+   promoted from provisional until their exact evidence digests are reviewed.
 6. Foliage, mesh HLOD, navigation, and paths have bounded data-first projection
    implementations plus small exported-resource and moving-revision fixtures.
    Navigation now has an actual path-query proof and HLOD has transition
@@ -605,6 +679,12 @@ Web CI verifies:
 - no unresolved wasm imports;
 - the minimal OpenGL shader imports under Compatibility;
 - build receipts match outputs;
+- source-built export-template and browser receipts match their pinned inputs;
+- both profiles export and pass hosted headed Chromium/Firefox correctness;
+- the four required hosted reports aggregate against the candidate source, side modules,
+  template receipt, and browser-toolchain receipt;
+- pinned Playwright WebKit diagnostics are retained without being accepted as
+  Safari evidence or blocking the real Safari lane;
 - native build outputs and class registration remain intact.
 
 ### 7.3 Browser correctness smoke
@@ -628,18 +708,27 @@ process exit is a failure.
 
 The fixed traversal reports:
 
-- main and side-module raw/compressed bytes;
+- complete production runtime-export raw/deterministic-gzip bytes plus the
+  plug-in side-module size;
 - page startup and extension-link time;
 - first terrain and first collision time;
 - p50/p95/p99 frame time and worst main-thread stall;
-- per-category terrain step/apply timing;
+- exact ten-category terrain step/apply timing plus a longest-step budget;
 - resident region, RID, collision, texture, and estimated heap counts;
 - tile update and normal generation time;
 - teleport recovery and steady-state eviction time;
 - renderer, browser, OS, hardware, viewport, and exact source tuple.
 
-Budgets are established from representative devices, stored in one versioned
-configuration, and never weakened solely to make a regression pass.
+Budgets are established from representative devices, stored in a versioned
+threshold contract, and never weakened solely to make a regression pass. The
+fixed fixture, capture bridge, provisional configuration, product-browser
+recorder, post-build calibration-approval receipt, and fail-closed lane verifier
+are implemented. The bundled template keeps `release_gate_eligible=false`.
+After physical receipts calibrate the thresholds, approval is emitted outside
+the candidate and points back to its immutable release-index digest. Stable
+verification requires both that receipt and the fully verified candidate, so
+evidence cannot float independently from the indexed bundle and approval never
+requires rebuilding the artifact it approves.
 
 ## 8. Delivery milestones and gates
 
@@ -658,9 +747,11 @@ configuration, and never weakened solely to make a regression pass.
 - Browser loads the extension and returns a capability dictionary.
 - Artifact receipt and binary-size report exist.
 
-The local gate is green for debug/release Web compilation, full native debug
-compilation, native core loading, export, and Chromium/Firefox/WebKit load and
-framebuffer probes. The release-candidate lane now reproduces both Web profiles
+The local gate is green for debug/release Web compilation, full native
+debug/release compilation, native core/extended loading, export, and current
+headed Chromium/Firefox load and framebuffer probes. Playwright WebKit reaches
+the marker and nonblank probe but fails on WebGL feedback errors. The
+release-candidate lane now reproduces both Web profiles
 from a clean checkout, adds native release compilation and regression smokes,
 and publishes only CI-produced, receipt-bound immutable assets. Representative
 browser performance remains a higher support gate.
@@ -676,12 +767,12 @@ browser performance remains a higher support gate.
 
 API v2, memory-only policy, bounded validation, shared-border and normal-source
 preflight, normal halo calculation, and coalesced dirty upload are implemented.
-Native and Chromium/Firefox/WebKit fixtures initialize four RAM-backed regions,
+Native and current Chromium/Firefox fixtures initialize four RAM-backed regions,
 apply two independent 67-by-67 tiles, inspect their exact shared height border
 and neighboring normals, render the raised heightfield, prove a non-finite
 replacement cannot partially mutate it, and bound upload counts to the two dirty
-runtime images per affected region. Deliberate border-mismatch rejection and the
-remaining LOD-transition fixtures stay in the release backlog.
+runtime images per affected region. A mismatched one-sample shared edge now fails
+before mutation; the matching edge then installs and retains continuous normals.
 
 ### Milestone 3 — Bounded single-thread residency — implementation locally verified 2026-08-24
 
@@ -696,9 +787,11 @@ coalesces newer revisions, marks regenerated normals dirty, and restores texture
 state under the region budget if cancellation follows a partial upload.
 Stable-key LRU eviction detaches rendering materials, removes collision, unloads
 images/buffers, and returns a three-stop teleport fixture to its two-region then
-zero-region ceilings. Native core/extended and automated Chromium/Firefox/WebKit
-checks are green. The milestone is not release-complete until a longer traversal
-passes representative headed/mobile frame, stall, RID, and heap budgets.
+zero-region ceilings. Native core/extended and automated Chromium/Firefox checks
+are green; WebKit remains diagnostic. The milestone is not release-complete until a longer traversal
+passes representative headed/mobile frame, stall, RID, and heap budgets. That
+fixed traversal and its receipts now exist, while all representative lanes and
+budget calibration remain open.
 
 ### Milestone 4 — Collision/material candidate — implementation locally verified; release gate open
 
@@ -717,10 +810,12 @@ browser fixtures raycast on both sides of the independently
 applied tile/region seam and compare hits with the visual heightfield. The
 Compatibility shader supplies height/slope semantic albedo without textures and
 optionally blends at most four samples from a maximum 16-layer, 2048-pixel array;
-both missing-texture and two-layer fixtures are green. Headless Chromium, Firefox,
-and WebKit satisfy local correctness. Equal-detail LOD rendering, headed hardware
-performance, Safari proper, and physical Android/iOS evidence keep the release
-gate open.
+both missing-texture and two-layer fixtures are green. Current headed Chromium
+and Firefox satisfy the local strict correctness contract. Repeated near/far
+and maximum LOD, one-level adjacency, negative offset, and destroy/recreate are
+now locally green, including all 16 edge-stitch meshes. The new hosted workflow,
+headed hardware performance, Safari proper, and physical Android/iOS evidence
+keep the release gate open.
 
 ### Milestone 5 — Web runtime prerelease distribution — second candidate prepared; stable gate open
 
@@ -735,10 +830,27 @@ gate open.
   keeps headed Safari, Android, iOS, and representative performance rows open.
 - Full native debug/release, full-profile registration, native core/extended,
   and extended companion regressions are mandatory CI jobs.
+- Hosted CI now source-builds the receipt-bound dlink template and requires both
+  exported profiles to pass headed virtual-display Chromium/Firefox correctness
+  before a tag may publish. Pinned WebKit remains a retained non-blocking
+  diagnostic. A green required run emits a
+  candidate/source/module/template/browser-bound aggregate consumed by the
+  stable gate. Its first upstream green execution remains outstanding.
+- The automatic tag publisher is deliberately prerelease-only and rejects a
+  stable-looking tag. This prevents a green compile/hosted-correctness run from
+  bypassing the still-external physical, calibrated-performance, and rollback
+  gates.
+- A manual dispatch can now build the exact final stable version name from
+  `master` before physical testing. After both profile gates pass, the stable
+  promotion preparer stages those unchanged candidate assets, normalized
+  evidence, candidate-index-bound calibration, per-profile statuses, a promotion
+  manifest, and complete checksums, then independently reverifies the directory.
 - The immutable first candidate and second candidate establish a real artifact
   rollback pair. Stable release still requires an actual whole-profile
   candidate-to-prior project restoration and repeated runtime smokes on
-  representative hardware; file-level substitution is never accepted.
+  representative hardware; file-level substitution is never accepted. The
+  prepare/serve/capture/record tooling now covers core and extended independently,
+  and the candidate-index-bound machine gate names every absent rollback lane.
 
 ### Milestone 6+ — Extended capabilities — first projections locally verified 2026-08-24
 
@@ -748,10 +860,12 @@ cancellable, bounded data-first projection/replacement/release fixtures. The
 suite now includes exported grass/road/rock/navigation resources, actual
 NavigationServer pathfinding, strict mesh/navigation index ceilings, fail-closed
 installed ownership, moving revisions, and HLOD hysteresis. Fresh local
-Chromium 149, Firefox 151, and Playwright WebKit 26.5 runs load the same extended
-side-module hash, execute those exported-resource fixtures, return a real
-navigation route, perform an HLOD swap, capture a nonblank 47-color framebuffer,
-and report no console, page, or request errors. Each capability still requires
+current Chromium 151 and Firefox 153 runs load the same extended side-module
+hash, execute those exported-resource fixtures, return a real navigation route,
+perform an HLOD swap, capture a nonblank framebuffer, and report no console,
+page, request, or HTTP errors. Playwright WebKit 26.5 reaches the marker and
+nonblank framebuffer but reports Godot WebGL feedback errors, so it remains a
+diagnostic. Each capability still requires
 its own representative-content, long-traversal performance/memory,
 physical-device, and native-regression gate; they do not share one blanket
 “feature parity” approval. Clean-merge compilation and packaging are now common

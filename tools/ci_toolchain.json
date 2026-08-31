@@ -10,6 +10,19 @@
     "asset_sha256": "0b1a6c54c2c619c12e169fe9241edda4b81080b519451cec2984bf0d2c6cb73c",
     "executable": "Godot_v4.7-stable_linux.x86_64"
   },
+  "godot_source": {
+    "repository": "https://github.com/godotengine/godot.git",
+    "commit": "5b4e0cb0fd279832bbdd69fed5354d4e5ad26f88",
+    "template": {
+      "platform": "web",
+      "target": "template_debug",
+      "architecture": "wasm32",
+      "threads": false,
+      "dynamic_linking": true,
+      "production": false,
+      "artifact": "godot.web.template_debug.wasm32.nothreads.dlink.zip"
+    }
+  },
   "scons": {
     "version": "4.8.1",
     "wheel_url": "https://files.pythonhosted.org/packages/b8/a7/823091100c88d7d992c8c608d82a88ed59e227d13f8ccb33ea7a96d43d51/SCons-4.8.1-py3-none-any.whl",
@@ -24,5 +37,65 @@
     "version": "1.2.0",
     "commit": "028fb5a23661f123017c060daa546b55cf4bde29",
     "repository": "https://github.com/google/brotli.git"
+  },
+  "playwright": {
+    "version": "1.62.0",
+    "wheels": [
+      {
+        "name": "playwright",
+        "version": "1.62.0",
+        "url": "https://files.pythonhosted.org/packages/43/6b/b24aebc2b04bffcb342bccf96e287c78b363e1615bed5cea97500cc0393a/playwright-1.62.0-py3-none-manylinux1_x86_64.whl",
+        "sha256": "ba33bae6a13b3d9d354c751cb618af357d20fe1d57767cbcce52079bbef17ad3"
+      },
+      {
+        "name": "pyee",
+        "version": "13.0.0",
+        "url": "https://files.pythonhosted.org/packages/9b/4d/b9add7c84060d4c1906abe9a7e5359f2a60f7a9a4f67268b2766673427d8/pyee-13.0.0-py3-none-any.whl",
+        "sha256": "48195a3cddb3b1515ce0695ed76036b5ccc2ef3a9f963ff9f77aec0139845498"
+      },
+      {
+        "name": "greenlet",
+        "version": "3.5.5",
+        "url": "https://files.pythonhosted.org/packages/78/ac/5c5b959999b6f09c3026b5dfe171575bc3121c5236ce74f495096f25b203/greenlet-3.5.5-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "147b25a42e5ca5be3d42356e8f608b37af715a1c196e9bf9d1627f3341adfe1d"
+      },
+      {
+        "name": "typing_extensions",
+        "version": "4.16.0",
+        "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+        "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+      }
+    ],
+    "browsers": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "linux_x86_64_installations": {
+      "chromium": {
+        "directories": 12,
+        "regular_files": 305,
+        "revision": "1234",
+        "symlinks": 0,
+        "total_file_bytes": 406847046,
+        "tree_sha256": "c338731a5b0eb31f5905ecba8e870264d8690b8a539a96219750511e086a8bd9"
+      },
+      "firefox": {
+        "directories": 16,
+        "regular_files": 51,
+        "revision": "1538",
+        "symlinks": 0,
+        "total_file_bytes": 315627774,
+        "tree_sha256": "c8dc0373cbb3ac357b04add7352e611d1d1e31c82ce909610ba0ca0dc01f0525"
+      },
+      "webkit": {
+        "directories": 11,
+        "regular_files": 37,
+        "revision": "2336",
+        "symlinks": 18,
+        "total_file_bytes": 306401261,
+        "tree_sha256": "44f6cde2e45c8972ebfdb591b9a4539644d463e4bbb73a7fe0c46f017a2bfaba"
+      }
+    }
   }
 }

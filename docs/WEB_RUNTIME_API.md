@@ -53,8 +53,10 @@ python3 scripts/verify_web_runtime_contract.py
   configured resident-region ceiling.
 - Shared region-border destinations are updated together. Adjacent caller tiles
   should overlap by their shared final/first sample and provide the same value.
-  Deliberate mismatch rejection is not yet a runtime feature, so producers must
-  enforce that invariant before queueing.
+  A one-row or one-column shared edge whose samples differ from a pending or
+  resident tile with another stable key fails atomically with
+  `shared_sample_mismatch`. Larger overlapping rectangles remain deliberate
+  update/replacement operations and are not treated as adjacency declarations.
 - Input is copied before queue success returns. Subsequent caller mutation cannot
   alter staged work.
 - Visible texture installation happens only after all height writes and normals
@@ -66,7 +68,20 @@ python3 scripts/verify_web_runtime_contract.py
 
 Configure the node, add it to a world, and create its grid before queueing work.
 The Web profiles force `runtime_memory_only=true` and keep the legacy automatic
-chunk/physics loops off.
+chunk/physics loops off. Call `update()` at an application-chosen bounded point
+after moving the configured camera; the Web runtime performs only the visual LOD
+plan/apply there, while runtime API v2 remains the sole region-residency owner.
+Grid creation loads no terrain region and creates no terrain mesh instance;
+queue/step admits the first region, and eviction releases its images, material,
+collision, and mesh RIDs on the main thread.
+
+Web topology is fail-closed before allocation: each terrain axis is at most 256
+quads, their product is at most 65,536 topology points, the selected region size
+may produce at most 1,024 regions, and visual range is at most 128 terrain
+quads. These are topology ceilings, not permission to make every region
+resident; the much smaller configured runtime residency and byte ceilings still
+apply. The live values are reported in `topology_limits` and
+`scheduler_owned_visual_residency=true`.
 
 ```gdscript
 var terrain := ClassDB.instantiate(&"MTerrain") as Node3D
@@ -105,8 +120,9 @@ while terrain.get_runtime_state().pending.size() > 0:
 ```
 
 Production code should stop stepping when its own frame budget is exhausted. The
-operation counts are deterministic bounds, while `elapsed_usec` and
-`metrics.longest_step_usec` are diagnostics rather than cross-device deadlines.
+operation counts are deterministic bounds, while `elapsed_usec`, the closed
+`phase_usec` dictionary, and `metrics.longest_step_usec` are diagnostics rather
+than cross-device deadlines.
 
 ## Terrain methods
 
@@ -146,6 +162,8 @@ queue order. Keys are stable tile ownership identifiers:
 If `update_collision=true`, every affected region must also fit
 `max_collision_regions`. With no explicit focus, the tile establishes a bounded
 collision desired set, preserving the compatibility meaning of that flag.
+Shared-edge comparison completes during request validation, before region load,
+height mutation, normal work, texture upload, or collision refresh.
 
 ### `step_runtime_work(max_sample_ops, max_region_ops)`
 
@@ -157,9 +175,13 @@ completed in that call, operation counts, elapsed microseconds, and queue sizes.
 Region eviction and collision operations run before tile work. Texture apply is
 stepped one region at a time. Collision shape creation/update is one region
 operation; it remains a synchronous main-thread operation and therefore needs
-representative-device stall evidence. Cancellation restores both heights and
-normals through the same sample budget, then restores dirty GPU textures through
-the region budget rather than performing synchronous whole-tile rollback.
+representative-device stall evidence. Every step returns
+`mterrain-runtime-phase-timings/v1` delta values for `region_load`, `preflight`,
+`write_heights`, `generate_normals`, `texture_apply`, `collision`, `eviction`,
+`rollback_heights`, `rollback_normals`, and `rollback_apply`. Cancellation
+restores both heights and normals through the same sample budget, then restores
+dirty GPU textures through the region budget rather than performing synchronous
+whole-tile rollback.
 
 ### Cancellation, results, and release
 
@@ -215,11 +237,15 @@ queued work.
 - resident tile keys, revisions, rectangles, and affected-region counts;
 - runtime-owned and loaded region counts plus estimated bytes;
 - pending eviction count;
+- `mterrain-runtime-visual-lod/v1` camera/offset, LOD counts and range, transition
+  edge count, and maximum adjacent-point LOD delta from the latest bounded visual
+  update;
 - collision revision, desired and actually active region IDs, per-region
   readiness/generation, pending operations, and the latest bounded collision
   error;
 - queued/completed/cancelled/coalesced/evicted counts, region load/unload counts,
-  dirty image uploads, collision applies, step count, and longest step time.
+  dirty image uploads, collision applies, step count, longest step time, and
+  cumulative/longest/invocation records for every fixed timing phase.
 
 Do not log height arrays or treat diagnostic timings as authority.
 
@@ -337,8 +363,10 @@ does not infer a second spatial grid.
 
 ## Release status
 
-Native and local headless Chromium/Firefox/WebKit fixtures validate these
-contracts. They are correctness evidence, not representative hardware or
-physical-mobile performance evidence. See `WEB_RUNTIME_ROADMAP.md` for the open
-clean-CI, LOD, traversal, timing, headed-browser, Safari, Android, iOS, and
-feature-specific release gates.
+Native and local headed virtual-display Chromium/Firefox fixtures validate these
+contracts. Pinned Playwright WebKit reaches the runtime marker and a nonblank
+frame but currently fails the strict WebGL error gate, so it remains diagnostic
+and is not Safari evidence. These runs are correctness evidence, not
+representative hardware or physical-mobile performance evidence. See
+`WEB_RUNTIME_ROADMAP.md` for the open clean-CI, traversal, timing, Safari,
+Android, iOS, and feature-specific release gates.

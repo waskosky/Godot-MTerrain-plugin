@@ -34,6 +34,24 @@ RID MChunks::get_mesh(int32_t size_meter, real_t h_scale, int8_t edge,const Ref<
     }else if (edge == M_RB)
     {
         mesh = MChunkGenerator::generate(size_meter,h_scale,false,true,false,true);
+    }else if (edge == M_LR)
+    {
+        mesh = MChunkGenerator::generate(size_meter,h_scale,true,true,false,false);
+    }else if (edge == M_TB)
+    {
+        mesh = MChunkGenerator::generate(size_meter,h_scale,false,false,true,true);
+    }else if (edge == M_LRT)
+    {
+        mesh = MChunkGenerator::generate(size_meter,h_scale,true,true,true,false);
+    }else if (edge == M_LRB)
+    {
+        mesh = MChunkGenerator::generate(size_meter,h_scale,true,true,false,true);
+    }else if (edge == M_LTB)
+    {
+        mesh = MChunkGenerator::generate(size_meter,h_scale,true,false,true,true);
+    }else if (edge == M_RTB)
+    {
+        mesh = MChunkGenerator::generate(size_meter,h_scale,false,true,true,true);
     }else if (edge == M_LRTB)
     {
         mesh = MChunkGenerator::generate(size_meter,h_scale,true,true,true,true);

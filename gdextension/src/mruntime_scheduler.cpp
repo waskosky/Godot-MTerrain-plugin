@@ -16,6 +16,35 @@ constexpr int32_t MIN_STEP_SAMPLE_OPS = 128;
 constexpr int32_t MAX_STEP_SAMPLE_OPS = 16384;
 constexpr int32_t MAX_STEP_REGION_OPS = 16;
 constexpr int32_t MAX_COMPLETED_RESULTS = 256;
+
+class ScopedRuntimeTiming {
+    uint64_t& total_usec;
+    uint64_t& longest_usec;
+    uint64_t& invocation_count;
+    std::chrono::steady_clock::time_point started;
+
+public:
+    ScopedRuntimeTiming(
+        uint64_t& p_total_usec,
+        uint64_t& p_longest_usec,
+        uint64_t& p_invocation_count
+    ) :
+        total_usec(p_total_usec),
+        longest_usec(p_longest_usec),
+        invocation_count(p_invocation_count),
+        started(std::chrono::steady_clock::now()) {
+    }
+
+    ~ScopedRuntimeTiming() {
+        const uint64_t elapsed_usec =
+            (uint64_t)std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now()-started
+            ).count();
+        total_usec += elapsed_usec;
+        longest_usec = std::max(longest_usec, elapsed_usec);
+        invocation_count++;
+    }
+};
 }
 
 MRuntimeScheduler::MRuntimeScheduler(MGrid* p_grid) : grid(p_grid) {
@@ -167,6 +196,126 @@ Dictionary MRuntimeScheduler::validate_and_build_work(
             return fail("non_finite_height", "Height tiles cannot contain NaN or infinity");
         }
         staged.set(index, value);
+    }
+
+    auto overlap_bounds = [
+        p_start_x,
+        p_start_y,
+        p_width,
+        p_height
+    ](
+        int32_t p_other_x,
+        int32_t p_other_y,
+        int32_t p_other_width,
+        int32_t p_other_height,
+        int32_t& r_left,
+        int32_t& r_top,
+        int32_t& r_right,
+        int32_t& r_bottom
+    ) -> bool {
+        r_left = MAX(p_start_x, p_other_x);
+        r_top = MAX(p_start_y, p_other_y);
+        r_right = MIN(p_start_x+p_width, p_other_x+p_other_width)-1;
+        r_bottom = MIN(p_start_y+p_height, p_other_y+p_other_height)-1;
+        return r_left <= r_right && r_top <= r_bottom;
+    };
+    auto staged_overlap_matches = [&staged, &overlap_bounds, p_start_x,
+        p_start_y, p_width, p_height](const TileWork& p_other) -> bool {
+        int32_t left = 0;
+        int32_t top = 0;
+        int32_t right = -1;
+        int32_t bottom = -1;
+        if(!overlap_bounds(
+            p_other.start_x,
+            p_other.start_y,
+            p_other.width,
+            p_other.height,
+            left,
+            top,
+            right,
+            bottom
+        )){
+            return true;
+        }
+        const bool vertical_shared_edge = left == right &&
+            (left == p_start_x || left == p_start_x+p_width-1) &&
+            (left == p_other.start_x ||
+                left == p_other.start_x+p_other.width-1);
+        const bool horizontal_shared_edge = top == bottom &&
+            (top == p_start_y || top == p_start_y+p_height-1) &&
+            (top == p_other.start_y ||
+                top == p_other.start_y+p_other.height-1);
+        if(!vertical_shared_edge && !horizontal_shared_edge){
+            return true;
+        }
+        for(int32_t y=top; y <= bottom; y++){
+            for(int32_t x=left; x <= right; x++){
+                const int32_t candidate_index =
+                    (y-p_start_y)*p_width+(x-p_start_x);
+                const int32_t other_index =
+                    (y-p_other.start_y)*p_other.width+(x-p_other.start_x);
+                if(staged[candidate_index] != p_other.heights[other_index]){
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    for(const TileWork& other : pending){
+        if(other.key == p_work_key){
+            continue;
+        }
+        if(!staged_overlap_matches(other) ||
+            (other.replacement != nullptr &&
+                !staged_overlap_matches(*other.replacement))){
+            return fail(
+                "shared_sample_mismatch",
+                "Overlapping height tiles with different work keys must supply identical shared samples"
+            );
+        }
+    }
+    for(const ResidentTile& other : resident){
+        if(other.key == p_work_key){
+            continue;
+        }
+        int32_t left = 0;
+        int32_t top = 0;
+        int32_t right = -1;
+        int32_t bottom = -1;
+        if(!overlap_bounds(
+            other.start_x,
+            other.start_y,
+            other.width,
+            other.height,
+            left,
+            top,
+            right,
+            bottom
+        )){
+            continue;
+        }
+        const bool vertical_shared_edge = left == right &&
+            (left == p_start_x || left == p_start_x+p_width-1) &&
+            (left == other.start_x || left == other.start_x+other.width-1);
+        const bool horizontal_shared_edge = top == bottom &&
+            (top == p_start_y || top == p_start_y+p_height-1) &&
+            (top == other.start_y || top == other.start_y+other.height-1);
+        if(!vertical_shared_edge && !horizontal_shared_edge){
+            continue;
+        }
+        for(int32_t y=top; y <= bottom; y++){
+            for(int32_t x=left; x <= right; x++){
+                const int32_t candidate_index =
+                    (y-p_start_y)*p_width+(x-p_start_x);
+                if(staged[candidate_index] !=
+                    grid->get_height_by_pixel((uint32_t)x, (uint32_t)y)){
+                    return fail(
+                        "shared_sample_mismatch",
+                        "Overlapping height tiles with different work keys must supply identical shared samples"
+                    );
+                }
+            }
+        }
     }
 
     const uint32_t normal_left = (uint32_t)(p_start_x > 0 ? p_start_x-1 : 0);
@@ -826,6 +975,35 @@ String MRuntimeScheduler::phase_name(WorkPhase p_phase) const {
     return "unknown";
 }
 
+String MRuntimeScheduler::timing_phase_name(TimingPhase p_phase) const {
+    switch(p_phase){
+        case TIMING_REGION_LOAD: return "region_load";
+        case TIMING_PREFLIGHT: return "preflight";
+        case TIMING_WRITE_HEIGHTS: return "write_heights";
+        case TIMING_GENERATE_NORMALS: return "generate_normals";
+        case TIMING_TEXTURE_APPLY: return "texture_apply";
+        case TIMING_COLLISION: return "collision";
+        case TIMING_EVICTION: return "eviction";
+        case TIMING_ROLLBACK_HEIGHTS: return "rollback_heights";
+        case TIMING_ROLLBACK_NORMALS: return "rollback_normals";
+        case TIMING_ROLLBACK_APPLY: return "rollback_apply";
+        case TIMING_PHASE_COUNT: break;
+    }
+    return "unknown";
+}
+
+Dictionary MRuntimeScheduler::phase_timing_snapshot() const {
+    Dictionary timings;
+    for(int32_t index=0; index < TIMING_PHASE_COUNT; index++){
+        Dictionary phase;
+        phase["total_usec"] = phase_total_usec[index];
+        phase["longest_usec"] = phase_longest_usec[index];
+        phase["invocations"] = phase_invocation_count[index];
+        timings[timing_phase_name((TimingPhase)index)] = phase;
+    }
+    return timings;
+}
+
 Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_region_ops) {
     if(grid == nullptr || !grid->is_created()){
         return fail("grid_not_created", "Create the terrain grid before stepping runtime work");
@@ -841,12 +1019,26 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
     int32_t remaining_samples = p_max_sample_ops;
     int32_t remaining_regions = p_max_region_ops;
     Array completed_this_step;
+    uint64_t phase_usec_before[TIMING_PHASE_COUNT] = {};
+    for(int32_t index=0; index < TIMING_PHASE_COUNT; index++){
+        phase_usec_before[index] = phase_total_usec[index];
+    }
 
     while(remaining_regions > 0 && !pending_evictions.is_empty()){
+        ScopedRuntimeTiming timing(
+            phase_total_usec[TIMING_EVICTION],
+            phase_longest_usec[TIMING_EVICTION],
+            phase_invocation_count[TIMING_EVICTION]
+        );
         process_one_eviction();
         remaining_regions--;
     }
     while(remaining_regions > 0 && !collision_operations.is_empty()){
+        ScopedRuntimeTiming timing(
+            phase_total_usec[TIMING_COLLISION],
+            phase_longest_usec[TIMING_COLLISION],
+            phase_invocation_count[TIMING_COLLISION]
+        );
         process_one_collision_operation();
         remaining_regions--;
     }
@@ -864,6 +1056,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
                     work.rollback_cursor = 0;
                 }
                 if(work.phase == WORK_ROLLBACK_HEIGHTS && remaining_samples > 0){
+                    ScopedRuntimeTiming timing(
+                        phase_total_usec[TIMING_ROLLBACK_HEIGHTS],
+                        phase_longest_usec[TIMING_ROLLBACK_HEIGHTS],
+                        phase_invocation_count[TIMING_ROLLBACK_HEIGHTS]
+                    );
                     const int32_t stop = MIN(
                         work.write_cursor,
                         work.rollback_cursor+remaining_samples
@@ -888,6 +1085,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
                     const int32_t normal_width =
                         (int32_t)(work.normal_right-work.normal_left+1);
                     if(remaining_samples >= normal_width){
+                        ScopedRuntimeTiming timing(
+                            phase_total_usec[TIMING_ROLLBACK_NORMALS],
+                            phase_longest_usec[TIMING_ROLLBACK_NORMALS],
+                            phase_invocation_count[TIMING_ROLLBACK_NORMALS]
+                        );
                         const int32_t rows = remaining_samples/normal_width;
                         const int32_t last_row = MIN(
                             (int32_t)work.normal_bottom,
@@ -915,6 +1117,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
                 if(work.phase == WORK_ROLLBACK_APPLY){
                     while(work.rollback_apply_region_cursor < work.region_ids.size() &&
                         remaining_regions > 0){
+                        ScopedRuntimeTiming timing(
+                            phase_total_usec[TIMING_ROLLBACK_APPLY],
+                            phase_longest_usec[TIMING_ROLLBACK_APPLY],
+                            phase_invocation_count[TIMING_ROLLBACK_APPLY]
+                        );
                         Vector<int32_t> one_region;
                         one_region.push_back(
                             work.region_ids[work.rollback_apply_region_cursor]
@@ -953,6 +1160,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
                 }
                 const int32_t region_id = work.region_ids[work.region_cursor++];
                 if(!grid->runtime_region_is_loaded(region_id)){
+                    ScopedRuntimeTiming timing(
+                        phase_total_usec[TIMING_REGION_LOAD],
+                        phase_longest_usec[TIMING_REGION_LOAD],
+                        phase_invocation_count[TIMING_REGION_LOAD]
+                    );
                     if(!grid->runtime_load_region(region_id)){
                         Dictionary result = fail("region_load_failed", "A required terrain region could not be loaded");
                         result["work_key"] = work.key;
@@ -976,6 +1188,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
             }
 
             if(work.phase == WORK_PREFLIGHT && remaining_samples > 0){
+                ScopedRuntimeTiming timing(
+                    phase_total_usec[TIMING_PREFLIGHT],
+                    phase_longest_usec[TIMING_PREFLIGHT],
+                    phase_invocation_count[TIMING_PREFLIGHT]
+                );
                 const int32_t sample_count = work.heights.size();
                 const int32_t stop = MIN(sample_count, work.sample_cursor+remaining_samples);
                 for(int32_t index=work.sample_cursor; index < stop; index++){
@@ -1014,6 +1231,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
             }
 
             if(work.phase == WORK_WRITE_HEIGHTS && remaining_samples > 0){
+                ScopedRuntimeTiming timing(
+                    phase_total_usec[TIMING_WRITE_HEIGHTS],
+                    phase_longest_usec[TIMING_WRITE_HEIGHTS],
+                    phase_invocation_count[TIMING_WRITE_HEIGHTS]
+                );
                 const int32_t sample_count = work.heights.size();
                 const int32_t stop = MIN(sample_count, work.write_cursor+remaining_samples);
                 for(int32_t index=work.write_cursor; index < stop; index++){
@@ -1035,6 +1257,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
             if(work.phase == WORK_GENERATE_NORMALS){
                 const int32_t normal_width = (int32_t)(work.normal_right-work.normal_left+1);
                 if(remaining_samples >= normal_width){
+                    ScopedRuntimeTiming timing(
+                        phase_total_usec[TIMING_GENERATE_NORMALS],
+                        phase_longest_usec[TIMING_GENERATE_NORMALS],
+                        phase_invocation_count[TIMING_GENERATE_NORMALS]
+                    );
                     const int32_t rows = remaining_samples/normal_width;
                     const int32_t last_row = MIN(
                         (int32_t)work.normal_bottom,
@@ -1059,6 +1286,11 @@ Dictionary MRuntimeScheduler::step(int32_t p_max_sample_ops, int32_t p_max_regio
             if(work.phase == WORK_APPLY && remaining_regions > 0){
                 while(work.apply_region_cursor < work.region_ids.size() &&
                     remaining_regions > 0){
+                    ScopedRuntimeTiming timing(
+                        phase_total_usec[TIMING_TEXTURE_APPLY],
+                        phase_longest_usec[TIMING_TEXTURE_APPLY],
+                        phase_invocation_count[TIMING_TEXTURE_APPLY]
+                    );
                     Vector<int32_t> one_region;
                     one_region.push_back(
                         work.region_ids[work.apply_region_cursor]
@@ -1115,6 +1347,12 @@ step_complete:
     result["sample_ops"] = p_max_sample_ops-remaining_samples;
     result["region_ops"] = p_max_region_ops-remaining_regions;
     result["elapsed_usec"] = elapsed_usec;
+    Dictionary phase_usec;
+    for(int32_t index=0; index < TIMING_PHASE_COUNT; index++){
+        phase_usec[timing_phase_name((TimingPhase)index)] =
+            phase_total_usec[index]-phase_usec_before[index];
+    }
+    result["phase_usec"] = phase_usec;
     result["completed"] = completed_this_step;
     result["pending_work"] = pending.size();
     result["pending_evictions"] = pending_evictions.size();
@@ -1426,6 +1664,9 @@ Dictionary MRuntimeScheduler::snapshot() const {
     result["loaded_region_count"] = managed_loaded_region_count();
     result["estimated_loaded_region_bytes"] = estimated_loaded_region_bytes();
     result["pending_evictions"] = pending_evictions.size();
+    result["visual_lod"] = grid != nullptr
+        ? grid->runtime_lod_snapshot()
+        : Dictionary();
 
     PackedInt32Array collision_regions;
     Array collision_region_state;
@@ -1472,6 +1713,8 @@ Dictionary MRuntimeScheduler::snapshot() const {
     metrics["collision_applies"] = collision_apply_count;
     metrics["steps"] = step_count;
     metrics["longest_step_usec"] = longest_step_usec;
+    metrics["phase_timing_contract"] = "mterrain-runtime-phase-timings/v1";
+    metrics["phase_timings"] = phase_timing_snapshot();
     result["metrics"] = metrics;
     return result;
 }
@@ -1563,4 +1806,9 @@ void MRuntimeScheduler::reset() {
     collision_apply_count = 0;
     step_count = 0;
     longest_step_usec = 0;
+    for(int32_t index=0; index < TIMING_PHASE_COUNT; index++){
+        phase_total_usec[index] = 0;
+        phase_longest_usec[index] = 0;
+        phase_invocation_count[index] = 0;
+    }
 }

@@ -9,7 +9,9 @@ Godot 4.7, wasm32, the Compatibility renderer, WebGL2, and a single-threaded
 GDExtension build. Experimental runtime API v2 now provides bounded,
 cancellable, revision-safe height work, deterministic tile/region eviction,
 near-focus collision kept aligned across later edits, and constrained
-texture-optional materials. The opt-in
+texture-optional materials. It also reports ten closed timing phases and bounded
+visual-LOD transition state, rejects mismatched shared tile edges atomically,
+and covers maximum LOD plus negative-offset destroy/recreate recovery. The opt-in
 `web_extended` package adds bounded data-first foliage, precomputed navigation,
 baked-path, and hysteretic mesh-HLOD projections without linking the native
 authoring subsystems. Its fixtures include exported grass/road/rock/navigation
@@ -17,10 +19,22 @@ resources, moving revisions, and a real navigation path query. The
 `web-runtime-v0.1.0-rc.2` review candidate adds clean-clone debug/release builds,
 native regressions, immutable profile bundles and receipts, and an index-bound
 machine-readable runtime contract alongside the published
-[support matrix](docs/WEB_SUPPORT_MATRIX.md). Local Chromium/Firefox/WebKit
-correctness checks are green; headed representative-hardware performance,
-Safari proper, and physical Android/iOS gates remain before a stable Web runtime
-claim.
+[support matrix](docs/WEB_SUPPORT_MATRIX.md). The repository now pins and builds
+its Godot dynamic-link template, defines candidate-bound hosted-browser
+correctness, and provides receipt-bound fixed traversal/device-capture plus
+independent core/extended whole-bundle rollback gates. Bundles carry a
+provisional threshold/calibration template; reviewed evidence is approved later
+by a separate receipt bound to the immutable candidate release index, avoiding
+any rebuild-and-retest cycle. Candidate bundles also carry the exact traversal
+sources, and performance budgets measure the deterministic compressed size of
+the complete runtime export rather than only the plug-in side module. Local
+headed Chromium/Firefox correctness checks are green for both profiles.
+Playwright WebKit reaches the fixture marker and a nonblank frame but its pinned
+Linux engine reports Godot framebuffer feedback errors, so it is retained as a
+diagnostic rather than mislabeled Safari evidence. The first hosted workflow
+run, calibrated headed representative-hardware performance, Safari proper,
+physical Android/iOS, and actual candidate-to-prior rollback receipts remain
+before a stable Web runtime claim.
 
 ![Screenshot_20230707_104154](https://github.com/mohsenph69/Godot-MTerrain-plugin/assets/52196206/7e3eb7da-af57-4ae5-8f55-f9fc1c8b26f8)
 
@@ -107,7 +121,9 @@ exact required WebAssembly features, and the extended companion hash when
 selected. The build fails if a no-thread artifact requests threads or shared
 memory. These directories are ignored build output. A project must use a Godot
 4.7 Web export template built with GDExtension support, dynamic linking, and
-`threads=no`.
+`threads=no`. `scripts/build_web_export_template.sh` builds that template from
+the pinned Godot source and emits a member-level receipt; browser and hardware
+evidence commands are documented in the release process.
 
 CI packages the two profiles separately. Each tagged prerelease contains both
 bundles, their machine-readable release index, `SHA256SUMS`, and GitHub's
@@ -165,12 +181,14 @@ Select `--profile web_extended`, the corresponding native library under
 argument, and a separate output directory to exercise all four optional
 projections. The terrain bridge exposes its exact bounds through
 `get_runtime_capabilities()` and live queue/residency/collision metrics through
-`get_runtime_state()`; callers should use `queue_height_tile()` plus
+`get_runtime_state()`, including visual LOD and phase timings; callers should use
+`queue_height_tile()` plus
 `step_runtime_work()` for frame-budgeted streaming and reserve
 `apply_height_tile()` for bounded compatibility calls.
 
 Use `arch=arm64` and the corresponding artifact name on Apple Silicon. Browser
 checks require Playwright and its selected engines. Each report retains both a
 page screenshot and a pixel-exact PNG reconstructed from the WebGL framebuffer,
-which avoids headless WebKit screenshot limitations. These local headless checks
-are not substitutes for the headed and physical-device gates in the roadmap.
+which avoids compositor screenshot limitations in some automated WebKit runs.
+Local automation and hosted virtual-display checks are not substitutes for the
+physical-device and representative-performance gates in the roadmap.

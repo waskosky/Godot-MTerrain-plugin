@@ -131,6 +131,8 @@ def main() -> int:
             "capabilities": {
                 "runtime_api_version": 2,
                 "api_stability": "experimental",
+                "single_threaded": True,
+                "runtime_memory_only": True,
                 "height_formats": ["r32f_metres"],
                 "max_height_tile_width": 67,
                 "max_height_tile_height": 67,
@@ -140,9 +142,14 @@ def main() -> int:
                 "heightfield_collision": True,
                 "compatibility_materials": True,
                 "height_tile_apply": True,
+                "height_tile_queue": True,
                 "height_tile_release": True,
                 "bounded_update_scheduler": True,
                 "bounded_collision": True,
+                "collision_focus": True,
+                "runtime_state_snapshot": True,
+                "scheduler_owned_visual_residency": True,
+                "phase_timing_metrics": True,
                 "runtime_material_configuration": True,
                 "foliage": extended,
                 "navigation": extended,
@@ -179,6 +186,12 @@ def main() -> int:
         },
     }
     if extended:
+        receipt["target"]["capabilities"].update(
+            {
+                "extended_runtime_api_version": 1,
+                "extended_runtime_class": "MTerrainWebExtendedRuntime",
+            }
+        )
         companion_path = ROOT / toolchain["runtime_companion"]
         receipt["runtime_companion"] = {
             "path": toolchain["runtime_companion"],

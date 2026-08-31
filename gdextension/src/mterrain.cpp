@@ -20,6 +20,13 @@
 #include "mtool.h"
 #endif
 
+namespace {
+constexpr int32_t WEB_MAX_TERRAIN_QUADS_PER_AXIS = 256;
+constexpr int64_t WEB_MAX_TERRAIN_TOPOLOGY_POINTS = 65536;
+constexpr int32_t WEB_MAX_TERRAIN_REGIONS = 1024;
+constexpr int32_t WEB_MAX_VISUAL_RANGE_QUADS = 128;
+}
+
 Vector<MTerrain*> MTerrain::all_terrain_nodes;
 
 void MTerrain::_bind_methods() {
@@ -343,6 +350,20 @@ void MTerrain::create_grid(){
     ERR_FAIL_COND(grid->is_created());
     ERR_FAIL_COND_EDMSG(terrain_size.x%region_size!=0,"Terrain size X component is not divisible by region size");
     ERR_FAIL_COND_EDMSG(terrain_size.y%region_size!=0,"Terrain size Y component is not divisible by region size");
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    ERR_FAIL_COND_EDMSG(
+        terrain_size.x > WEB_MAX_TERRAIN_QUADS_PER_AXIS ||
+            terrain_size.y > WEB_MAX_TERRAIN_QUADS_PER_AXIS ||
+            (int64_t)terrain_size.x*(int64_t)terrain_size.y >
+                WEB_MAX_TERRAIN_TOPOLOGY_POINTS,
+        "Bounded Web runtime terrain topology exceeds its hard limit"
+    );
+    ERR_FAIL_COND_EDMSG(
+        (int64_t)(terrain_size.x/region_size)*
+            (int64_t)(terrain_size.y/region_size) > WEB_MAX_TERRAIN_REGIONS,
+        "Bounded Web runtime terrain region topology exceeds its hard limit"
+    );
+#endif
     if(runtime_scheduler != nullptr){
         runtime_scheduler->reset();
     }
@@ -413,9 +434,11 @@ void MTerrain::create_grid(){
         return;
     }
     get_cam_pos();
+#ifndef MTERRAIN_BOUNDED_RUNTIME
     grid->update_regions_bounds(cam_pos,false);
     grid->update_regions_at_load();
     grid->clear_region_bounds();
+#endif
     grid->update_chunks(cam_pos);
     grid->apply_update_chunks();
 #ifndef MTERRAIN_BOUNDED_RUNTIME
@@ -518,9 +541,11 @@ void MTerrain::update() {
     get_cam_pos();
 #ifdef MTERRAIN_SINGLE_THREADED
     finish_updating = false;
+#ifndef MTERRAIN_BOUNDED_RUNTIME
     if(grid->update_regions_bounds(cam_pos,true)){
         grid->update_regions();
     }
+#endif
     grid->update_chunks(cam_pos);
     grid->apply_update_chunks();
     last_update_pos = cam_pos;
@@ -805,7 +830,13 @@ Dictionary MTerrain::get_runtime_capabilities() const {
     capabilities["bounded_collision"] = true;
     capabilities["collision_focus"] = true;
     capabilities["runtime_state_snapshot"] = true;
+    capabilities["phase_timing_metrics"] = true;
     capabilities["runtime_material_configuration"] = true;
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    capabilities["scheduler_owned_visual_residency"] = true;
+#else
+    capabilities["scheduler_owned_visual_residency"] = false;
+#endif
     Dictionary scheduler_limits;
     scheduler_limits["minimum_sample_ops_per_step"] = 128;
     scheduler_limits["maximum_sample_ops_per_step"] = 16384;
@@ -813,6 +844,16 @@ Dictionary MTerrain::get_runtime_capabilities() const {
     scheduler_limits["maximum_regions_per_tile"] = 16;
     scheduler_limits["maximum_collision_focus_radius_regions"] = 4;
     capabilities["scheduler_limits"] = scheduler_limits;
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    Dictionary topology_limits;
+    topology_limits["maximum_terrain_quads_per_axis"] =
+        WEB_MAX_TERRAIN_QUADS_PER_AXIS;
+    topology_limits["maximum_terrain_topology_points"] =
+        WEB_MAX_TERRAIN_TOPOLOGY_POINTS;
+    topology_limits["maximum_terrain_regions"] = WEB_MAX_TERRAIN_REGIONS;
+    topology_limits["maximum_visual_range_quads"] = WEB_MAX_VISUAL_RANGE_QUADS;
+    capabilities["topology_limits"] = topology_limits;
+#endif
     if(runtime_scheduler != nullptr){
         capabilities["default_runtime_limits"] =
             runtime_scheduler->snapshot().get("limits", Dictionary());
@@ -1035,6 +1076,14 @@ Vector2i MTerrain::get_terrain_size() const{
 
 void MTerrain::set_terrain_size(Vector2i size){
     ERR_FAIL_COND_EDMSG(size.x < 1 || size.y < 1,"Terrain size can not be zero");
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    ERR_FAIL_COND_EDMSG(
+        size.x > WEB_MAX_TERRAIN_QUADS_PER_AXIS ||
+            size.y > WEB_MAX_TERRAIN_QUADS_PER_AXIS ||
+            (int64_t)size.x*(int64_t)size.y > WEB_MAX_TERRAIN_TOPOLOGY_POINTS,
+        "Bounded Web runtime terrain topology exceeds its hard limit"
+    );
+#endif
     if(size == terrain_size){
         return;
     }
@@ -1046,12 +1095,32 @@ Vector2i MTerrain::get_terrain_region_count() const{
 }
 
 void MTerrain::set_terrain_region_count(Vector2i size){
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    ERR_FAIL_COND_EDMSG(size.x < 1 || size.y < 1, "Terrain region count must be positive");
+    const int64_t width = (int64_t)size.x*(int64_t)region_size;
+    const int64_t height = (int64_t)size.y*(int64_t)region_size;
+    ERR_FAIL_COND_EDMSG(
+        width > WEB_MAX_TERRAIN_QUADS_PER_AXIS ||
+            height > WEB_MAX_TERRAIN_QUADS_PER_AXIS ||
+            width*height > WEB_MAX_TERRAIN_TOPOLOGY_POINTS ||
+            (int64_t)size.x*(int64_t)size.y > WEB_MAX_TERRAIN_REGIONS,
+        "Bounded Web runtime terrain region topology exceeds its hard limit"
+    );
+    set_terrain_size(Vector2i((int32_t)width, (int32_t)height));
+#else
     terrain_size = size * region_size;
+#endif
 }
 
 
 void MTerrain::set_max_range(int32_t input) {
     ERR_FAIL_COND_EDMSG(input<1,"Max range can not be less than one");
+#ifdef MTERRAIN_BOUNDED_RUNTIME
+    ERR_FAIL_COND_EDMSG(
+        input > WEB_MAX_VISUAL_RANGE_QUADS,
+        "Bounded Web runtime visual range exceeds 128 terrain quads"
+    );
+#endif
     max_range = input;
     grid->max_range = input;
 }

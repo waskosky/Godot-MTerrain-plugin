@@ -40,6 +40,15 @@ func _run() -> void:
 			failures.append("bounded collision capability was not reported")
 		if capabilities.get(&"height_tile_release") != true:
 			failures.append("height tile release capability was not reported")
+		if capabilities.get(&"phase_timing_metrics") != true:
+			failures.append("runtime phase timing capability was not reported")
+		if capabilities.get(&"scheduler_owned_visual_residency") != true:
+			failures.append("scheduler-owned visual residency was not reported")
+		var topology_limits: Dictionary = capabilities.get(&"topology_limits", {})
+		if topology_limits.get(&"maximum_terrain_topology_points") != 65536 \
+		or topology_limits.get(&"maximum_terrain_regions") != 1024 \
+		or topology_limits.get(&"maximum_visual_range_quads") != 128:
+			failures.append("bounded topology capability contract was inconsistent")
 		for extended_capability in [&"foliage", &"navigation", &"paths", &"mesh_hlod"]:
 			if capabilities.get(extended_capability) != extended:
 				failures.append(
@@ -81,10 +90,16 @@ func _run() -> void:
 		# region borders at pixel 128 while remaining bounded to 67x67.
 		terrain.call(&"set_terrain_size", Vector2i(8, 8))
 		terrain.call(&"set_region_size", 4)
+		terrain.call(&"set_lod_distance", PackedInt32Array([1, 2, 3, 4, 5]))
 		terrain.call(&"set_grid_create", true)
 		if not bool(terrain.call(&"is_grid_created")):
 			failures.append("memory-only terrain grid was not created")
 		else:
+			var initial_state: Dictionary = terrain.call(&"get_runtime_state")
+			if int(initial_state.get("loaded_region_count", -1)) != 0 \
+			or int(initial_state.get("resident_tile_count", -1)) != 0 \
+			or int(initial_state.visual_lod.get("visible_points", -1)) != 0:
+				failures.append("grid creation bypassed scheduler-owned visual residency")
 			var heights := PackedFloat32Array()
 			heights.resize(67 * 67)
 			for local_y in range(67):
@@ -140,9 +155,21 @@ func _run() -> void:
 				var collision_error := await _verify_collision_alignment(terrain)
 				if not collision_error.is_empty():
 					failures.append(collision_error)
-				var release_error := _verify_release_and_eviction(terrain)
-				if not release_error.is_empty():
-					failures.append(release_error)
+				else:
+					var release_error := _verify_release_and_eviction(terrain)
+					if not release_error.is_empty():
+						failures.append(release_error)
+					else:
+						var lod_error := _verify_lod_transitions(terrain, camera)
+						if not lod_error.is_empty():
+							failures.append(lod_error)
+						else:
+							var recreate_error := _verify_recreate_with_negative_offset(
+								terrain,
+								camera,
+							)
+							if not recreate_error.is_empty():
+								failures.append(recreate_error)
 		terrain.call(&"set_grid_create", false)
 		world.queue_free()
 
@@ -150,6 +177,8 @@ func _run() -> void:
 		print(
 			"MTERRAIN_RUNTIME_SMOKE_OK initialized_tile_samples=4489 ",
 			"rejected_non_finite=1 bounded_scheduler=1 bounded_collision=1 ",
+			"rejected_border=1 lod_transitions=1 recreate=1 phase_timings=1 ",
+			"scheduler_visual=1 ",
 			"profile=%s" % expected_profile,
 		)
 		quit(0)
@@ -517,25 +546,59 @@ func _verify_bounded_runtime(terrain: Node3D) -> String:
 
 	var seam_left := _make_global_plane_tile(62, 30, 67, 67)
 	var seam_right := _make_global_plane_tile(128, 30, 67, 67)
-	for request in [
-		["seam-left", 62, seam_left],
-		["seam-right", 128, seam_right],
-	]:
-		queued = terrain.call(
-			&"queue_height_tile",
-			request[0],
-			1,
-			20,
-			request[1],
-			30,
-			67,
-			67,
-			request[2],
-			true,
-		)
-		if not bool(queued.get("ok", false)):
-			return "adjacent seam tile failed to queue: %s" % JSON.stringify(queued)
-		_drain_runtime(terrain, 128, 1)
+	queued = terrain.call(
+		&"queue_height_tile",
+		"seam-left",
+		1,
+		20,
+		62,
+		30,
+		67,
+		67,
+		seam_left,
+		true,
+	)
+	if not bool(queued.get("ok", false)):
+		return "left seam tile failed to queue: %s" % JSON.stringify(queued)
+	_drain_runtime(terrain, 128, 1)
+	var mismatch := seam_right.duplicate()
+	for local_y in 67:
+		mismatch[local_y * 67] += 1.0
+	var seam_before_mismatch := float(terrain.call(&"get_height_by_pixel", 128, 64))
+	var rejected_mismatch: Dictionary = terrain.call(
+		&"queue_height_tile",
+		"seam-right-mismatch",
+		1,
+		20,
+		128,
+		30,
+		67,
+		67,
+		mismatch,
+		true,
+	)
+	if rejected_mismatch.get("code") != "shared_sample_mismatch":
+		return "mismatched shared border did not fail closed"
+	if not is_equal_approx(
+		float(terrain.call(&"get_height_by_pixel", 128, 64)),
+		seam_before_mismatch,
+	):
+		return "rejected shared border partially mutated terrain"
+	queued = terrain.call(
+		&"queue_height_tile",
+		"seam-right",
+		1,
+		20,
+		128,
+		30,
+		67,
+		67,
+		seam_right,
+		true,
+	)
+	if not bool(queued.get("ok", false)):
+		return "matching adjacent seam tile failed to queue: %s" % JSON.stringify(queued)
+	_drain_runtime(terrain, 128, 1)
 	var seam_height := float(terrain.call(&"get_height_by_pixel", 128, 64))
 	var expected_seam_height := 128.0 * 0.0625 + 64.0 * 0.03125
 	if not is_equal_approx(seam_height, expected_seam_height):
@@ -587,6 +650,22 @@ func _verify_bounded_runtime(terrain: Node3D) -> String:
 		return "terrain edit left an already-active collision shape stale"
 	if int(state.metrics.coalesced) < 1 or int(state.metrics.collision_applies) < 1:
 		return "bounded coalescing/collision metrics were not recorded"
+	if state.metrics.get("phase_timing_contract") != "mterrain-runtime-phase-timings/v1":
+		return "runtime phase timing contract was not reported"
+	for phase in [
+		"region_load",
+		"preflight",
+		"write_heights",
+		"generate_normals",
+		"texture_apply",
+		"collision",
+		"rollback_heights",
+		"rollback_normals",
+		"rollback_apply",
+	]:
+		if not state.metrics.phase_timings.has(phase) \
+		or int(state.metrics.phase_timings[phase].invocations) < 1:
+			return "runtime phase timing was not recorded for %s" % phase
 	return ""
 
 
@@ -730,6 +809,115 @@ func _verify_release_and_eviction(terrain: Node3D) -> String:
 	state = terrain.call(&"get_runtime_state")
 	if int(state.loaded_region_count) != 0:
 		return "teleport fixture did not release its region buffers"
+	if not state.metrics.phase_timings.has("eviction") \
+	or int(state.metrics.phase_timings.eviction.invocations) < 1:
+		return "runtime eviction timing was not recorded"
+	return ""
+
+
+func _verify_lod_transitions(terrain: Node3D, camera: Camera3D) -> String:
+	var queued: Dictionary = terrain.call(
+		&"queue_height_tile",
+		"lod-visual",
+		1,
+		0,
+		20,
+		20,
+		1,
+		1,
+		PackedFloat32Array([1.0]),
+		false,
+	)
+	if not bool(queued.get("ok", false)) \
+	or _drain_runtime(terrain, 128, 1) < 1:
+		return "visual LOD fixture could not establish scheduler residency"
+	var near_position := Vector3(32.0, 80.0, 32.0)
+	var far_position := Vector3(224.0, 80.0, 224.0)
+	var expected_signatures: Array[PackedInt32Array] = []
+	var previous_revision := int(terrain.call(&"get_runtime_state").visual_lod.revision)
+	for cycle in 3:
+		for position_index in 2:
+			camera.position = near_position if position_index == 0 else far_position
+			camera.look_at(Vector3(128.0, 0.0, 128.0))
+			terrain.call(&"update")
+			var lod: Dictionary = terrain.call(&"get_runtime_state").visual_lod
+			if lod.get("kind") != "mterrain-runtime-visual-lod/v1":
+				return "visual LOD state contract was not reported"
+			if int(lod.revision) <= previous_revision:
+				return "visual LOD revision did not advance"
+			previous_revision = int(lod.revision)
+			if int(lod.visible_points) < 1:
+				return "visual LOD update reported no visible points"
+			if int(lod.maximum_neighbor_delta) > 1:
+				return "visual LOD update skipped a transition level"
+			if int(lod.maximum_lod) > int(lod.maximum_supported_lod):
+				return "visual LOD update exceeded its supported maximum"
+			var signature: PackedInt32Array = lod.lod_counts
+			if cycle == 0:
+				expected_signatures.append(signature.duplicate())
+			elif signature != expected_signatures[position_index]:
+				return "repeated LOD promotion/demotion was not deterministic"
+	camera.position = Vector3(-256.0, 80.0, -256.0)
+	camera.look_at(Vector3.ZERO)
+	terrain.call(&"update")
+	var maximum_lod: Dictionary = terrain.call(&"get_runtime_state").visual_lod
+	if int(maximum_lod.maximum_lod) != int(maximum_lod.maximum_supported_lod):
+		return "maximum visual LOD was not exercised"
+	if int(maximum_lod.maximum_neighbor_delta) > 1:
+		return "maximum visual LOD transition skipped a level"
+	terrain.call(&"release_runtime_tile", "lod-visual", 1)
+	if _drain_runtime(terrain, 128, 1) < 1:
+		return "visual LOD fixture did not release scheduler residency"
+	return ""
+
+
+func _verify_recreate_with_negative_offset(
+	terrain: Node3D,
+	camera: Camera3D
+) -> String:
+	terrain.call(&"set_grid_create", false)
+	var cleared: Dictionary = terrain.call(&"get_runtime_state")
+	if not cleared.pending.is_empty() \
+	or int(cleared.resident_tile_count) != 0 \
+	or int(cleared.loaded_region_count) != 0:
+		return "destroyed terrain retained runtime ownership"
+	var negative_offset := Vector3(-512.0, 0.0, -384.0)
+	terrain.call(&"set_offset", negative_offset)
+	camera.position = negative_offset + Vector3(128.0, 96.0, 196.0)
+	camera.look_at(negative_offset + Vector3(128.0, 0.0, 128.0))
+	terrain.call(&"set_grid_create", true)
+	if not bool(terrain.call(&"is_grid_created")):
+		return "terrain did not recreate after destruction"
+	var heights := _make_global_plane_tile(20, 20, 17, 17)
+	var applied: Dictionary = terrain.call(
+		&"apply_height_tile",
+		20,
+		20,
+		17,
+		17,
+		heights,
+		false,
+	)
+	if not bool(applied.get("ok", false)):
+		return "negative-offset recreated terrain rejected a bounded tile"
+	var world_position: Vector3 = terrain.call(&"get_pixel_world_pos", 28, 28)
+	if world_position.x >= 0.0 or world_position.z >= 0.0:
+		return "negative terrain offset did not reach world-space projection"
+	if terrain.call(&"get_closest_pixel", world_position) != Vector2i(28, 28):
+		return "negative terrain offset did not round-trip pixel coordinates"
+	if not is_equal_approx(
+		float(terrain.call(&"get_height", world_position)),
+		float(heights[8 * 17 + 8]),
+	):
+		return "negative terrain offset changed sampled height"
+	var recreated: Dictionary = terrain.call(&"get_runtime_state")
+	if recreated.visual_lod.terrain_offset != negative_offset:
+		return "recreated visual LOD state omitted the negative offset"
+	terrain.call(&"release_height_tile", 20, 20, 17, 17)
+	if _drain_runtime(terrain, 128, 1) < 1:
+		return "recreated terrain did not release within budget"
+	if int(terrain.call(&"get_runtime_state").loaded_region_count) != 0:
+		return "recreated terrain did not recover to zero residency"
 	return ""
 
 
@@ -752,6 +940,18 @@ func _make_global_plane_tile(
 
 
 func _drain_runtime(terrain: Node3D, sample_budget: int, region_budget: int) -> int:
+	var expected_phase_keys := [
+		"region_load",
+		"preflight",
+		"write_heights",
+		"generate_normals",
+		"texture_apply",
+		"collision",
+		"eviction",
+		"rollback_heights",
+		"rollback_normals",
+		"rollback_apply",
+	]
 	for step_index in 256:
 		var stepped: Dictionary = terrain.call(
 			&"step_runtime_work",
@@ -762,6 +962,13 @@ func _drain_runtime(terrain: Node3D, sample_budget: int, region_budget: int) -> 
 		or int(stepped.get("sample_ops", 0)) > sample_budget \
 		or int(stepped.get("region_ops", 0)) > region_budget:
 			return -1
+		if not stepped.has("phase_usec") \
+		or stepped.phase_usec.size() != expected_phase_keys.size():
+			return -1
+		for phase in expected_phase_keys:
+			if not stepped.phase_usec.has(phase) \
+			or int(stepped.phase_usec[phase]) < 0:
+				return -1
 		if stepped.get("status") == "idle":
 			return step_index + 1
 	return 256

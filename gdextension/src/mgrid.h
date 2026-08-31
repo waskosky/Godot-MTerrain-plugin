@@ -170,6 +170,14 @@ class MGrid {
     uint64_t total_remove=0;
     uint64_t total_add=0;
     uint64_t total_chunks=0;
+    uint64_t runtime_lod_revision=0;
+    int32_t runtime_lod_counts[8] = {};
+    int32_t runtime_lod_min=-1;
+    int32_t runtime_lod_max=-1;
+    int32_t runtime_lod_max_neighbor_delta=0;
+    int32_t runtime_lod_transition_edges=0;
+    int32_t runtime_lod_visible_points=0;
+    Vector3 runtime_lod_camera_position;
 
 #ifndef MTERRAIN_SINGLE_THREADED
     std::future<void> update_regions_future;
@@ -178,7 +186,7 @@ class MGrid {
 
 
     public:
-    std::mutex update_chunks_mutex;
+    mutable std::mutex update_chunks_mutex;
     MSaveConfig save_config;
     Ref<PhysicsMaterial> physics_material;
     int collision_layer=1;
@@ -305,6 +313,7 @@ class MGrid {
     void runtime_mark_region_normals_dirty(const Vector<int32_t>& region_ids);
     int32_t runtime_upload_region_ids(const Vector<int32_t>& region_ids);
     uint64_t runtime_estimated_region_bytes(int32_t region_id) const;
+    Dictionary runtime_lod_snapshot() const;
 
     MImage* get_image_by_pixel(uint32_t x,uint32_t y, const int32_t index);
     _FORCE_INLINE_ Color get_pixel(uint32_t x,uint32_t y, const int32_t index) const;

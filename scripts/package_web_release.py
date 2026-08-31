@@ -18,6 +18,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "build" / "distribution"
 RUNTIME_CONTRACT_RELATIVE = "runtime/web_runtime_contract.json"
+PERFORMANCE_BUDGETS_RELATIVE = "tools/web_performance_budgets.json"
+PERFORMANCE_CALIBRATION_RELATIVE = "tools/web_performance_calibration.json"
+RELEASE_GATE_RELATIVE = "tools/web_release_gate.json"
 VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 PROFILES = {
     "web_core": {
@@ -32,6 +35,12 @@ PROFILES = {
     },
 }
 TARGETS = ("template_debug", "template_release")
+PERFORMANCE_FIXTURE_FILES = (
+    "tests/web_performance/main.gd",
+    "tests/web_performance/evidence_bridge.js",
+    "tests/web_smoke/main.tscn",
+    "tests/web_smoke/project.godot",
+)
 COMMON_FILES = (
     "LICENSE",
     "README.md",
@@ -40,14 +49,30 @@ COMMON_FILES = (
     "docs/WEB_RELEASE_PROCESS.md",
     "docs/WEB_SUPPORT_MATRIX.md",
     RUNTIME_CONTRACT_RELATIVE,
+    PERFORMANCE_BUDGETS_RELATIVE,
+    PERFORMANCE_CALIBRATION_RELATIVE,
+    RELEASE_GATE_RELATIVE,
     "start_material_opengl.res",
     "start_opengl.gdshader",
     "start_opengl.gdshader.uid",
+    *PERFORMANCE_FIXTURE_FILES,
 )
 
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def threshold_contract_sha256(budgets: dict[str, Any]) -> str:
+    contract = {
+        "schema": budgets.get("schema"),
+        "fixture": budgets.get("fixture"),
+        "profiles": budgets.get("profiles"),
+    }
+    encoded = json.dumps(
+        contract, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return sha256_bytes(encoded)
 
 
 def sha256_file(path: Path) -> str:
@@ -134,6 +159,7 @@ def validated_receipt(
     commit: str,
     tree: str,
     godot_cpp_commit: str,
+    expected_capabilities: dict[str, Any],
 ) -> dict[str, Any]:
     receipt = read_json(path)
     if receipt.get("schema") != "mterrain-web-build-receipt-v2":
@@ -155,6 +181,12 @@ def validated_receipt(
         raise SystemExit(f"Receipt profile mismatch in {path}")
     if receipt_target.get("target") != target:
         raise SystemExit(f"Receipt target mismatch in {path}")
+    receipt_capabilities = receipt_target.get("capabilities", {})
+    for key, expected in expected_capabilities.items():
+        if receipt_capabilities.get(key) != expected:
+            raise SystemExit(
+                f"Receipt capability mismatch in {path}: {key} must be {expected!r}"
+            )
     artifact_record = receipt.get("artifact", {})
     if artifact_record.get("name") != artifact.name:
         raise SystemExit(f"Receipt artifact name mismatch in {path}")
@@ -214,6 +246,38 @@ def package(version: str, output: Path) -> None:
     runtime_contract_name = f"Godot-MTerrain-{version}-runtime-contract.json"
     runtime_contract_output = output / runtime_contract_name
     runtime_contract_output.write_bytes(runtime_contract_path.read_bytes())
+    performance_budgets_path = require_file(
+        ROOT / PERFORMANCE_BUDGETS_RELATIVE, "Web performance budgets"
+    )
+    performance_calibration_path = require_file(
+        ROOT / PERFORMANCE_CALIBRATION_RELATIVE, "Web performance calibration"
+    )
+    release_gate_path = require_file(
+        ROOT / RELEASE_GATE_RELATIVE, "Web release gate"
+    )
+    performance_budgets = read_json(performance_budgets_path)
+    performance_calibration = read_json(performance_calibration_path)
+    if performance_budgets.get("schema") != (
+        "mterrain-web-performance-budgets-v1"
+    ):
+        raise SystemExit("Unexpected Web performance-budget schema")
+    if performance_calibration.get("schema") != (
+        "mterrain-web-performance-calibration-v1"
+    ):
+        raise SystemExit("Unexpected Web performance-calibration schema")
+    if performance_calibration.get("threshold_contract_sha256") != (
+        threshold_contract_sha256(performance_budgets)
+    ):
+        raise SystemExit("Performance calibration targets different thresholds")
+    if performance_calibration.get("release_gate_eligible") is not False:
+        raise SystemExit(
+            "Release packages must carry the provisional calibration template; "
+            "candidate-bound approval is post-build evidence"
+        )
+    if read_json(release_gate_path).get("schema") != (
+        "mterrain-web-release-gate-v1"
+    ):
+        raise SystemExit("Unexpected Web release-gate schema")
     index: dict[str, Any] = {
         "schema": "mterrain-web-release-index-v1",
         "version": version,
@@ -247,6 +311,24 @@ def package(version: str, output: Path) -> None:
             "sha256": sha256_file(runtime_contract_output),
             "size": runtime_contract_output.stat().st_size,
         },
+        "performance_budgets": {
+            "path": PERFORMANCE_BUDGETS_RELATIVE,
+            "schema": "mterrain-web-performance-budgets-v1",
+            "sha256": sha256_file(performance_budgets_path),
+            "size": performance_budgets_path.stat().st_size,
+        },
+        "performance_calibration": {
+            "path": PERFORMANCE_CALIBRATION_RELATIVE,
+            "schema": "mterrain-web-performance-calibration-v1",
+            "sha256": sha256_file(performance_calibration_path),
+            "size": performance_calibration_path.stat().st_size,
+        },
+        "release_gate": {
+            "path": RELEASE_GATE_RELATIVE,
+            "schema": "mterrain-web-release-gate-v1",
+            "sha256": sha256_file(release_gate_path),
+            "size": release_gate_path.stat().st_size,
+        },
         "profiles": {},
     }
 
@@ -263,6 +345,14 @@ def package(version: str, output: Path) -> None:
             ],
             "artifacts": {},
         }
+        expected_capabilities = {
+            **contract_profiles["web_core"]["required_capabilities"],
+            **contract_profiles["web_core"]["unsupported_capabilities"],
+        }
+        if profile == "web_extended":
+            expected_capabilities.update(
+                contract_profiles[profile]["native_required_capabilities"]
+            )
         for target in TARGETS:
             artifact = require_file(
                 configuration["artifact_dir"]
@@ -284,6 +374,7 @@ def package(version: str, output: Path) -> None:
                 commit=commit,
                 tree=tree,
                 godot_cpp_commit=godot_cpp_commit,
+                expected_capabilities=expected_capabilities,
             )
             artifact_name = f"{archive_root}/mterrain/{artifact.name}"
             receipt_name = f"{archive_root}/receipts/{receipt_path.name}"
@@ -434,6 +525,31 @@ def verify(output: Path) -> None:
     profiles = index.get("profiles", {})
     if set(profiles) != set(PROFILES):
         raise SystemExit("Release index must contain exactly core and extended profiles")
+    machine_contracts = (
+        (
+            "performance_budgets",
+            PERFORMANCE_BUDGETS_RELATIVE,
+            "mterrain-web-performance-budgets-v1",
+        ),
+        (
+            "performance_calibration",
+            PERFORMANCE_CALIBRATION_RELATIVE,
+            "mterrain-web-performance-calibration-v1",
+        ),
+        ("release_gate", RELEASE_GATE_RELATIVE, "mterrain-web-release-gate-v1"),
+    )
+    legacy_without_stable_gate = index.get("version") in {
+        "web-runtime-v0.1.0-rc.1",
+        "web-runtime-v0.1.0-rc.2",
+    }
+    for field, relative, schema in machine_contracts:
+        record = index.get(field)
+        if record is None and legacy_without_stable_gate:
+            continue
+        if not isinstance(record, dict):
+            raise SystemExit(f"Release index omitted {field}")
+        if record.get("path") != relative or record.get("schema") != schema:
+            raise SystemExit(f"Release index has an invalid {field} contract")
     for profile, profile_index in profiles.items():
         bundle = profile_index.get("bundle", {})
         bundle_path = require_file(output / str(bundle.get("name", "")), profile)
@@ -454,6 +570,14 @@ def verify(output: Path) -> None:
             f"{archive_root}/docs/WEB_RUNTIME_API.md",
             f"{archive_root}/docs/WEB_SUPPORT_MATRIX.md",
         }
+        if not legacy_without_stable_gate:
+            required_paths.update(
+                f"{archive_root}/{relative}"
+                for _, relative, _ in machine_contracts
+            )
+            required_paths.update(
+                f"{archive_root}/{relative}" for relative in PERFORMANCE_FIXTURE_FILES
+            )
         if runtime_contract_data is not None:
             bundle_contract_path = runtime_contract_index.get("bundle_path")
             if bundle_contract_path != RUNTIME_CONTRACT_RELATIVE:
@@ -461,6 +585,36 @@ def verify(output: Path) -> None:
             required_paths.add(f"{archive_root}/{bundle_contract_path}")
         if not required_paths.issubset(members):
             raise SystemExit(f"Bundle {profile} is missing common runtime files")
+        if not legacy_without_stable_gate:
+            for field, relative, schema in machine_contracts:
+                record = index[field]
+                data = members[f"{archive_root}/{relative}"]
+                if record.get("sha256") != sha256_bytes(data):
+                    raise SystemExit(f"Bundle {profile} {field} digest mismatch")
+                if record.get("size") != len(data):
+                    raise SystemExit(f"Bundle {profile} {field} size mismatch")
+                if json.loads(data.decode("utf-8")).get("schema") != schema:
+                    raise SystemExit(f"Bundle {profile} {field} schema mismatch")
+            bundled_budgets = json.loads(
+                members[f"{archive_root}/{PERFORMANCE_BUDGETS_RELATIVE}"].decode(
+                    "utf-8"
+                )
+            )
+            bundled_calibration = json.loads(
+                members[
+                    f"{archive_root}/{PERFORMANCE_CALIBRATION_RELATIVE}"
+                ].decode("utf-8")
+            )
+            if bundled_calibration.get("threshold_contract_sha256") != (
+                threshold_contract_sha256(bundled_budgets)
+            ):
+                raise SystemExit(
+                    f"Bundle {profile} calibration targets different thresholds"
+                )
+            if bundled_calibration.get("release_gate_eligible") is not False:
+                raise SystemExit(
+                    f"Bundle {profile} must carry the provisional calibration template"
+                )
         if runtime_contract_data is not None:
             bundled_contract = members[
                 f"{archive_root}/{runtime_contract_index['bundle_path']}"
@@ -482,14 +636,40 @@ def verify(output: Path) -> None:
             artifact_data = members[artifact_path]
             receipt = json.loads(members[receipt_path].decode("utf-8"))
             artifact_sha = sha256_bytes(artifact_data)
+            if receipt.get("schema") != "mterrain-web-build-receipt-v2":
+                raise SystemExit(f"Unexpected receipt schema for {profile}/{target}")
             if artifact_index.get("sha256") != artifact_sha:
                 raise SystemExit(f"Index artifact digest mismatch for {profile}/{target}")
             if artifact_index.get("size") != len(artifact_data):
                 raise SystemExit(f"Index artifact size mismatch for {profile}/{target}")
             if receipt.get("artifact", {}).get("sha256") != artifact_sha:
                 raise SystemExit(f"Receipt digest mismatch for {profile}/{target}")
+            if receipt.get("artifact", {}).get("size") != len(artifact_data):
+                raise SystemExit(f"Receipt size mismatch for {profile}/{target}")
+            if receipt.get("artifact", {}).get("name") != PurePosixPath(
+                artifact_path
+            ).name:
+                raise SystemExit(f"Receipt artifact name mismatch for {profile}/{target}")
             if receipt.get("target", {}).get("profile") != profile:
                 raise SystemExit(f"Receipt profile mismatch for {profile}/{target}")
+            if receipt.get("target", {}).get("target") != target:
+                raise SystemExit(f"Receipt target mismatch for {profile}/{target}")
+            receipt_source = receipt.get("source", {})
+            index_source = index.get("source", {})
+            if (
+                receipt_source.get("mterrain_commit")
+                != index_source.get("mterrain_commit")
+                or receipt_source.get("mterrain_tree")
+                != index_source.get("mterrain_tree")
+                or receipt_source.get("godot_cpp_commit")
+                != index_source.get("godot_cpp_commit")
+                or receipt_source.get("mterrain_dirty") is not False
+            ):
+                raise SystemExit(f"Receipt source mismatch for {profile}/{target}")
+            if artifact_index.get("brotli") != receipt.get("artifact", {}).get(
+                "brotli"
+            ):
+                raise SystemExit(f"Receipt Brotli record mismatch for {profile}/{target}")
         if set(profile_index.get("artifacts", {})) != set(TARGETS):
             raise SystemExit(f"Bundle {profile} must contain debug and release artifacts")
         if profile == "web_extended":
