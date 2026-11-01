@@ -49,6 +49,12 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertEqual(
             companion["hard_limits"]["maximum_hlod_cross_fade_steps"], 16
         )
+        self.assertEqual(companion["hard_limits"]["maximum_hlod_fade_materials"], 128)
+        self.assertEqual(companion["hard_limits"]["maximum_mesh_surfaces"], 16)
+        self.assertEqual(
+            companion["required_capabilities"]["hlod_cross_fade_mode"],
+            "opaque_base_material_alpha",
+        )
         self.assertEqual(
             companion["hard_limits"]["maximum_path_collision_projections"], 64
         )
@@ -939,6 +945,9 @@ class WebSourceContractTests(unittest.TestCase):
             self.assertIn("scheduler_visual=1", source)
         self.assertIn('frame_data_url: capture.toDataURL("image/png")', browser_runner)
         self.assertIn('framebuffer_capture.write_bytes', browser_runner)
+        self.assertIn('terrain_pixel_count: terrainPixels', browser_runner)
+        self.assertIn('int(frame_probe.get("terrain_pixel_count", 0)) < 1024', browser_runner)
+        self.assertIn('camera.look_at(world_position)', web_smoke)
         self.assertIn('"harness_error_type": type(error).__name__', browser_runner)
         self.assertIn('"profile": args.profile', browser_runner)
         self.assertIn('f"profile={args.profile}"', browser_runner)
@@ -1034,6 +1043,11 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn("navigation_index_out_of_bounds", runtime)
         self.assertIn("hlod_hysteresis_m", runtime)
         self.assertIn("hlod_cross_fade_steps", runtime)
+        self.assertNotIn("active_projection.transparency", runtime)
+        self.assertNotIn("incoming_projection.transparency", runtime)
+        self.assertIn("unsupported_hlod_fade_material", runtime)
+        browser_smoke = (ROOT / "tests/web_smoke/main.gd").read_text(encoding="utf-8")
+        self.assertIn('load("res://hlod_fade_probe.gd").verify(self)', browser_smoke)
         self.assertIn("path_collision_policy_in_use", runtime)
         self.assertIn("installed_projection_limit", runtime)
         self.assertIn("resource_policy_in_use", runtime)

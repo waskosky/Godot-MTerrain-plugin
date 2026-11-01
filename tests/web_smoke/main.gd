@@ -472,6 +472,12 @@ func _verify_lod_and_recreate() -> String:
 	var recreated: Dictionary = _terrain.call(&"get_runtime_state")
 	if recreated.visual_lod.terrain_offset != negative_offset:
 		return "Web recreated LOD state omitted the negative offset"
+	# The recreated fixture owns the tile around pixel 28, not the old centre
+	# at pixel 128. Finish with resident terrain in view for the framebuffer gate.
+	world_position.y = float(_terrain.call(&"get_height", world_position))
+	camera.position = world_position + Vector3(18.0, 22.0, 28.0)
+	camera.look_at(world_position)
+	_terrain.call(&"update")
 	return ""
 
 
@@ -712,7 +718,7 @@ func _verify_extended_runtime() -> String:
 	or int(state.metrics.get("path_collision_installs", 0)) < 2:
 		runtime.queue_free()
 		return "web_extended bounded HLOD fade or path-collision replacement did not finish"
-	return ""
+	return await load("res://hlod_fade_probe.gd").verify(self)
 
 
 func _fixture_height(x: float, z: float) -> float:
