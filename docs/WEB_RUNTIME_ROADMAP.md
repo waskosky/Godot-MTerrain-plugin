@@ -670,9 +670,32 @@ per apply operation. It excludes decals, lights, GI, threaded loads, and arbitra
 resource paths. Index as well as vertex counts are bounded, installed ownership
 fails closed, and configurable distance hysteresis prevents threshold thrash.
 Optional 0–16-step cross-fades retain active/incoming ownership and consume one
-apply operation per start, step, or cancellation. Exported near/far rock,
-moving-revision, and 256-stop four-step fixtures are present. Representative
-memory/frame-time and physical-device gates remain open.
+apply operation per start, step, or cancellation. The November 1, 2026 audit
+found that the previous implementation used `GeometryInstance3D.transparency`,
+which Compatibility ignores: lifecycle counters passed while both meshes were
+fully opaque. The replacement uses private alpha-blended opaque base-material
+copies, validates its narrower material capability before mutation, and restores
+the original opaque material at rest. Arbitrary shader materials, albedo
+textures, vertex alpha, extra passes and other opacity effects fail closed for
+requested fades; immediate swaps retain their existing material support.
+Each projection owns at most 128 preallocated material copies, including their
+deferred render-instance retirement; a step changes at most 32 opacities.
+The exported render regression measures near/start/quarter/half/three-quarter/
+finish/cancel/replace/release frames, checks caller material ownership, and
+retains a nine-frame contact sheet. It fails against the previous implementation.
+Local exported Chromium 149 and Firefox 151 diagnostic runs now measure
+incoming opacity as 0/0.251/0.498/0.749/1 and pass without console, page, request,
+HTTP, or WebGL errors. The headless extended lifecycle test also covers rejected
+materials, pending-replacement preservation, immediate shader-material support,
+and the 128-material ownership ceiling. These local checks reused the unchanged
+`7c510ce` native/Web core binaries; clean-source rebuild/hosted gates still bind
+the next candidate independently. These are correctness results, not headed
+hardware or physical-mobile performance qualification.
+Exported near/far rock, moving-revision, and 256-stop four-step fixtures remain
+present. Alpha sorting/overdraw and temporary shadow limitations, representative
+memory/frame-time, production material coverage, and physical-device gates
+remain open. This repair does not admit extended capabilities into a core-only
+application or qualify its separate grass/collision integration.
 
 ### 6.3 Navigation
 

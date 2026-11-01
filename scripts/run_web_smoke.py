@@ -261,6 +261,15 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
             ),
             marker,
         )
+        hlod_render_probe = await page.evaluate(
+            "() => window.__mterrainHlodFadeProbe || null"
+        )
+        if isinstance(hlod_render_probe, dict):
+            contact_png = hlod_render_probe.pop("contact_sheet_png", "")
+            if isinstance(contact_png, str) and 0 < len(contact_png) <= 1048576:
+                contact_path = args.evidence_dir / f"{args.browser}-hlod-fade.png"
+                contact_path.write_bytes(base64.b64decode(contact_png, validate=True))
+                hlod_render_probe["contact_sheet"] = str(contact_path)
         await browser.close()
 
     report: dict[str, object] = {
@@ -293,6 +302,7 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
         "request_failures": request_failures,
         "http_errors": http_errors,
         "frame_probe": frame_probe,
+        "hlod_render_probe": hlod_render_probe,
         "framebuffer_capture": (
             str(framebuffer_capture) if framebuffer_capture_written else None
         ),
@@ -350,6 +360,16 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
         or http_errors
         or not box
         or not framebuffer_capture_written
+        or (
+            args.mode == "smoke"
+            and args.profile == "web_extended"
+            and (
+                not isinstance(hlod_render_probe, dict)
+                or hlod_render_probe.get("schema") != "mterrain-hlod-render-probe-v1"
+                or hlod_render_probe.get("failure") != ""
+                or not hlod_render_probe.get("contact_sheet")
+            )
+        )
     )
     report["passed"] = passed
     return report

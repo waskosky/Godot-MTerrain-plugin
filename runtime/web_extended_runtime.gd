@@ -19,6 +19,9 @@ const MAX_NAVIGATION_POLYGONS := 8192
 const MAX_NAVIGATION_INDICES := 65536
 const MAX_HLOD_LEVELS := 4
 const MAX_HLOD_CROSS_FADE_STEPS := 16
+const MAX_MESH_SURFACES := 16
+# Two private banks, each with at most four levels of sixteen surfaces.
+const MAX_HLOD_FADE_MATERIALS := 128
 const MAX_PATH_COLLISION_PROJECTIONS := 64
 const MAX_PATH_COLLISION_VERTICES := 65536
 const MAX_PATH_COLLISION_EXTENT_M := 10000
@@ -113,6 +116,8 @@ func get_runtime_capabilities() -> Dictionary:
 		"foliage_quality_tiers": _public_foliage_quality_tiers(),
 		"navigation_agent_profiles": true,
 		"hlod_cross_fade": true,
+		"hlod_cross_fade_mode": "opaque_base_material_alpha",
+		"maximum_hlod_fade_materials": MAX_HLOD_FADE_MATERIALS,
 		"maximum_hlod_cross_fade_steps": MAX_HLOD_CROSS_FADE_STEPS,
 		"maximum_hlod_levels": MAX_HLOD_LEVELS,
 		"limits": _public_limits(),
@@ -467,9 +472,15 @@ func queue_mesh_hlod(
 			return material_check
 	if not _finite_transform(transform):
 		return _error("invalid_hlod_transform", "HLOD transform must be finite.")
+	var fade_materials := _prepare_hlod_fade_materials(meshes, material)
+	if not bool(fade_materials.ok):
+		return fade_materials
 	var projection := Node3D.new()
 	projection.name = _projection_name(&"mesh_hlod", work_key)
 	projection.transform = transform
+	# Retain every bank until deferred node destruction has retired its render
+	# instances, including queued material changes during replacement/release.
+	projection.set_meta(&"mterrain_hlod_fade_materials", fade_materials.banks)
 	var active_projection := MeshInstance3D.new()
 	active_projection.name = "Active"
 	active_projection.mesh = meshes[0]
@@ -478,7 +489,6 @@ func queue_mesh_hlod(
 	var incoming_projection := MeshInstance3D.new()
 	incoming_projection.name = "Incoming"
 	incoming_projection.material_override = material
-	incoming_projection.transparency = 1.0
 	incoming_projection.visible = false
 	projection.add_child(incoming_projection)
 	return _enqueue({
@@ -498,6 +508,9 @@ func queue_mesh_hlod(
 		"transition_active": false,
 		"active_projection": active_projection,
 		"incoming_projection": incoming_projection,
+		"material": material,
+		"fade_materials": fade_materials.banks,
+		"fade_material_count": fade_materials.count,
 		"vertex_count": total_vertices,
 		"index_count": total_indices,
 	})
@@ -693,6 +706,7 @@ func get_runtime_state() -> Dictionary:
 				"hlod_transition_active": bool(record.get("transition_active", false)),
 				"hlod_fade_step": int(record.get("fade_step", 0)),
 				"hlod_fade_steps": int(record.get("fade_steps", 0)),
+				"hlod_fade_material_count": int(record.get("fade_material_count", 0)),
 				"navigation_agent_radius_m": float(
 					record.get("navigation_agent_radius_m", 0.0)
 				),
@@ -852,10 +866,10 @@ func _step_one_hlod(focus_position: Vector3) -> bool:
 		var next_index := _desired_hlod_index(record, focus_position)
 		if bool(record.transition_active):
 			if next_index != int(record.target_lod_index):
-				active_projection.transparency = 0.0
+				_set_hlod_materials(record, active_projection, int(record.lod_index))
 				incoming_projection.visible = false
 				incoming_projection.mesh = null
-				incoming_projection.transparency = 1.0
+				incoming_projection.material_override = null
 				record.transition_active = false
 				record.target_lod_index = record.lod_index
 				record.fade_step = 0
@@ -865,16 +879,16 @@ func _step_one_hlod(focus_position: Vector3) -> bool:
 			var fade_steps: int = max(1, int(record.fade_steps))
 			var fade_step: int = min(fade_steps, int(record.fade_step) + 1)
 			var progress := float(fade_step) / float(fade_steps)
-			active_projection.transparency = progress
-			incoming_projection.transparency = 1.0 - progress
+			_set_hlod_opacity(record, 0, int(record.lod_index), 1.0 - progress)
+			_set_hlod_opacity(record, 1, int(record.target_lod_index), progress)
 			record.fade_step = fade_step
 			_metrics.hlod_transition_steps += 1
 			if fade_step >= fade_steps:
 				active_projection.mesh = incoming_projection.mesh
-				active_projection.transparency = 0.0
+				_set_hlod_materials(record, active_projection, int(record.target_lod_index))
 				incoming_projection.visible = false
 				incoming_projection.mesh = null
-				incoming_projection.transparency = 1.0
+				incoming_projection.material_override = null
 				record.lod_index = record.target_lod_index
 				record.transition_active = false
 				record.fade_step = 0
@@ -891,7 +905,10 @@ func _step_one_hlod(focus_position: Vector3) -> bool:
 			_metrics.hlod_swaps += 1
 			return true
 		incoming_projection.mesh = record.meshes[next_index]
-		incoming_projection.transparency = 1.0
+		_set_hlod_opacity(record, 0, int(record.lod_index), 1.0)
+		_set_hlod_opacity(record, 1, next_index, 0.0)
+		_set_hlod_materials(record, active_projection, int(record.lod_index), 0)
+		_set_hlod_materials(record, incoming_projection, next_index, 1)
 		incoming_projection.visible = true
 		record.target_lod_index = next_index
 		record.transition_active = true
@@ -900,6 +917,69 @@ func _step_one_hlod(focus_position: Vector3) -> bool:
 		_metrics.hlod_transition_starts += 1
 		return true
 	return false
+
+
+func _prepare_hlod_fade_materials(meshes: Array, material: Material) -> Dictionary:
+	var banks: Array = [[], []]
+	var count := 0
+	if int(_limits.hlod_cross_fade_steps) == 0:
+		return {"ok": true, "banks": banks, "count": count}
+	# Compatibility ignores GeometryInstance3D.transparency. Preallocate private
+	# alpha materials here, never in a stepping callback or on caller resources.
+	for mesh: Mesh in meshes:
+		var sources: Array = [material] if material != null else []
+		if material == null:
+			for surface in mesh.get_surface_count():
+				sources.append(mesh.surface_get_material(surface))
+		var copies: Array = [[], []]
+		for source: Material in sources:
+			var base := source as BaseMaterial3D
+			if source == null:
+				base = StandardMaterial3D.new()
+			if base == null or base.next_pass != null \
+			or base.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED \
+			or base.blend_mode != BaseMaterial3D.BLEND_MODE_MIX \
+			or base.albedo_texture != null or base.vertex_color_use_as_albedo \
+			or base.proximity_fade_enabled or base.refraction_enabled or base.shadow_to_opacity \
+			or base.distance_fade_mode != BaseMaterial3D.DISTANCE_FADE_DISABLED:
+				return _error(
+					"unsupported_hlod_fade_material",
+					"HLOD fades require opaque BaseMaterial3D without albedo textures, vertex "
+					+ "alpha, extra passes, blending or other opacity effects; explicitly select "
+					+ "hlod_cross_fade_steps=0 for arbitrary supplied materials.",
+				)
+			for bank in 2:
+				var copy := base.duplicate() as BaseMaterial3D
+				copy.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				var color := copy.albedo_color
+				# Opaque source materials ignore their albedo alpha.
+				color.a = 1.0
+				copy.albedo_color = color
+				copies[bank].append(copy)
+				count += 1
+		for bank in 2:
+			banks[bank].append(copies[bank])
+	return {"ok": true, "banks": banks, "count": count}
+
+
+func _set_hlod_materials(
+	record: Dictionary, projection: MeshInstance3D, level: int, bank: int = -1,
+) -> void:
+	projection.material_override = record.material
+	if record.material != null:
+		if bank >= 0:
+			projection.material_override = record.fade_materials[bank][level][0]
+		return
+	for surface in projection.mesh.get_surface_count():
+		projection.set_surface_override_material(surface,
+			record.fade_materials[bank][level][surface] if bank >= 0 else null)
+
+
+func _set_hlod_opacity(record: Dictionary, bank: int, level: int, opacity: float) -> void:
+	for material: BaseMaterial3D in record.fade_materials[bank][level]:
+		var color := material.albedo_color
+		color.a = opacity
+		material.albedo_color = color
 
 
 func _hlod_needs_swap(focus_position: Vector3) -> bool:
@@ -927,7 +1007,7 @@ func _desired_hlod_index(record: Dictionary, focus_position: Vector3) -> int:
 
 
 func _validate_mesh(mesh: Mesh) -> Dictionary:
-	if mesh == null or mesh.get_surface_count() < 1 or mesh.get_surface_count() > 16:
+	if mesh == null or mesh.get_surface_count() < 1 or mesh.get_surface_count() > MAX_MESH_SURFACES:
 		return _error("invalid_mesh", "Mesh must contain between 1 and 16 surfaces.")
 	var vertices := 0
 	var indices := 0

@@ -368,6 +368,29 @@ most one fade step per apply operation. A changed desired level cancels the
 in-flight fade in one bounded operation; zero keeps the API v1 immediate-swap
 behavior.
 
+Compatibility ignores `GeometryInstance3D.transparency`. The supported fade
+mode is `opaque_base_material_alpha`, reported by the companion's capability
+table. Nonzero fade steps require opaque `BaseMaterial3D` materials (including
+Standard/ORM materials), or a missing material using Godot's default appearance.
+Each effective surface material must use mix blending, have no next pass,
+albedo texture, vertex-color albedo, proximity/distance fade, refraction, or
+shadow-to-opacity effect. These restrictions preserve the opaque source's
+appearance when its private copy enters alpha blending. Unsupported requests
+return `unsupported_hlod_fade_material` before replacing pending or installed
+work. A caller may explicitly configure zero steps to retain arbitrary supplied
+materials; the runtime never silently disables a requested fade.
+
+Each queued projection preallocates two private material banks, with at most
+four levels × sixteen surfaces × two banks = 128 material copies. An override
+material needs only one copy per level per bank. Stepping allocates no materials;
+one transition operation updates at most 32 surface opacities. Caller-owned
+materials remain unchanged. Original opaque materials resume on completion or
+cancellation, and both private banks remain owned until their render instances
+are destroyed. The state receipt includes `hlod_fade_material_count`. The
+temporary alpha pass has ordinary transparency sorting/overdraw limitations
+and does not cast opaque shadows during the fade; representative art and
+physical-device cost remain separate gates.
+
 ### Extended stepping and ownership
 
 `step_runtime_work(max_instance_ops, max_apply_ops, focus_position)` accepts an

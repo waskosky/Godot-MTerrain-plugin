@@ -49,6 +49,12 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertEqual(
             companion["hard_limits"]["maximum_hlod_cross_fade_steps"], 16
         )
+        self.assertEqual(companion["hard_limits"]["maximum_hlod_fade_materials"], 128)
+        self.assertEqual(companion["hard_limits"]["maximum_mesh_surfaces"], 16)
+        self.assertEqual(
+            companion["required_capabilities"]["hlod_cross_fade_mode"],
+            "opaque_base_material_alpha",
+        )
         self.assertEqual(
             companion["hard_limits"]["maximum_path_collision_projections"], 64
         )
@@ -1034,6 +1040,11 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn("navigation_index_out_of_bounds", runtime)
         self.assertIn("hlod_hysteresis_m", runtime)
         self.assertIn("hlod_cross_fade_steps", runtime)
+        self.assertNotIn("active_projection.transparency", runtime)
+        self.assertNotIn("incoming_projection.transparency", runtime)
+        self.assertIn("unsupported_hlod_fade_material", runtime)
+        browser_smoke = (ROOT / "tests/web_smoke/main.gd").read_text(encoding="utf-8")
+        self.assertIn('load("res://hlod_fade_probe.gd").verify(self)', browser_smoke)
         self.assertIn("path_collision_policy_in_use", runtime)
         self.assertIn("installed_projection_limit", runtime)
         self.assertIn("resource_policy_in_use", runtime)

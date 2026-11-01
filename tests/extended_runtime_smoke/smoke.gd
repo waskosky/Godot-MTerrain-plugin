@@ -25,6 +25,9 @@ func _run() -> void:
 	or capabilities.get(&"hlod_cross_fade") != true \
 	or not (capabilities.get(&"foliage_quality_tiers", {}) as Dictionary).has("low"):
 		failures.append("extended runtime omitted its bounded maturation capabilities")
+	if capabilities.get("hlod_cross_fade_mode") != "opaque_base_material_alpha" \
+	or capabilities.get("maximum_hlod_fade_materials") != 128:
+		failures.append("extended runtime omitted its Compatibility fade boundary")
 
 	var configured: Dictionary = runtime.configure_limits({
 		"max_foliage_instances": 16,
@@ -255,6 +258,69 @@ func _run() -> void:
 		[mesh, farther_mesh],
 		PackedFloat32Array([10.0, 100.0]),
 	)
+	var unsupported_shader := ShaderMaterial.new()
+	var unsupported_alpha := StandardMaterial3D.new()
+	unsupported_alpha.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var unsupported_texture := StandardMaterial3D.new()
+	unsupported_texture.albedo_texture = ImageTexture.create_from_image(
+		Image.create(1, 1, false, Image.FORMAT_RGBA8))
+	var unsupported_vertex_alpha := StandardMaterial3D.new()
+	unsupported_vertex_alpha.vertex_color_use_as_albedo = true
+	var unsupported_pass := StandardMaterial3D.new()
+	unsupported_pass.next_pass = StandardMaterial3D.new()
+	for unsupported in [unsupported_shader, unsupported_alpha, unsupported_texture,
+		unsupported_vertex_alpha, unsupported_pass]:
+		var rejected_fade: Dictionary = runtime.queue_mesh_hlod(
+			"unsupported-fade", 1, 0, [mesh, farther_mesh],
+			PackedFloat32Array([10.0, 100.0]), Transform3D.IDENTITY, unsupported)
+		if rejected_fade.get("code") != "unsupported_hlod_fade_material":
+			failures.append("unsupported HLOD fade material did not fail closed")
+	var surface_shader_mesh := _triangle_mesh(1.0)
+	surface_shader_mesh.surface_set_material(0, unsupported_shader)
+	var rejected_surface: Dictionary = runtime.queue_mesh_hlod(
+		"unsupported-surface", 1, 0, [surface_shader_mesh, farther_mesh],
+		PackedFloat32Array([10.0, 100.0]))
+	if rejected_surface.get("code") != "unsupported_hlod_fade_material":
+		failures.append("unsupported mesh surface material bypassed fade validation")
+	var invalid_replacement: Dictionary = runtime.queue_mesh_hlod(
+		"rocks", 2, 6, [mesh, farther_mesh], PackedFloat32Array([10.0, 100.0]),
+		Transform3D.IDENTITY, unsupported_shader)
+	if invalid_replacement.get("code") != "unsupported_hlod_fade_material" \
+	or runtime.take_runtime_work_result("rocks", 1).get("code") != "result_not_found":
+		failures.append("invalid fade replacement displaced valid pending work")
+	var immediate_runtime: Node3D = runtime_script.new()
+	root.add_child(immediate_runtime)
+	immediate_runtime.configure_limits({"allow_in_memory_resources": true})
+	var immediate_shader: Dictionary = immediate_runtime.queue_mesh_hlod(
+		"immediate-shader", 1, 0, [surface_shader_mesh, farther_mesh],
+		PackedFloat32Array([10.0, 100.0]), Transform3D.IDENTITY, unsupported_shader)
+	if not bool(immediate_shader.get("ok", false)):
+		failures.append("immediate HLOD no longer accepts arbitrary supplied materials")
+	immediate_runtime.step_runtime_work(1, 1)
+	if int(immediate_runtime.get_runtime_state().installed.mesh_hlod[0].hlod_fade_material_count) != 0:
+		failures.append("immediate HLOD allocated unnecessary fade materials")
+	immediate_runtime.queue_free()
+	var maximum_runtime: Node3D = runtime_script.new()
+	root.add_child(maximum_runtime)
+	maximum_runtime.configure_limits({"allow_in_memory_resources": true, "hlod_cross_fade_steps": 2})
+	var sixteen_surfaces := ArrayMesh.new()
+	for _surface in 16:
+		sixteen_surfaces.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh.surface_get_arrays(0))
+	var maximum_result: Dictionary = maximum_runtime.queue_mesh_hlod(
+		"maximum-materials", 1, 0,
+		[sixteen_surfaces, sixteen_surfaces, sixteen_surfaces, sixteen_surfaces],
+		PackedFloat32Array([10.0, 20.0, 30.0, 100.0]))
+	if not bool(maximum_result.get("ok", false)):
+		failures.append("bounded four-level sixteen-surface HLOD was rejected")
+	else:
+		maximum_runtime.step_runtime_work(1, 1)
+		if int(maximum_runtime.get_runtime_state().installed.mesh_hlod[0].hlod_fade_material_count) != 128:
+			failures.append("HLOD private material ownership exceeded or missed its hard bound")
+		maximum_runtime.step_runtime_work(1, 1, Vector3(500.0, 0.0, 0.0))
+		maximum_runtime.release_projection(&"mesh_hlod", "maximum-materials")
+		if int(maximum_runtime.get_runtime_state().installed_counts.mesh_hlod) != 0:
+			failures.append("maximum-size fading HLOD retained installed ownership after release")
+	maximum_runtime.queue_free()
 	var oversized_hlod: Dictionary = runtime.queue_mesh_hlod(
 		"oversized-hlod",
 		1,
@@ -269,6 +335,8 @@ func _run() -> void:
 			failures.append("extended projection queue failed: %s" % JSON.stringify(result))
 	_drain(runtime, Vector3.ZERO, 4, 4)
 	state = runtime.get_runtime_state()
+	if int(state.installed.mesh_hlod[0].hlod_fade_material_count) != 4:
+		failures.append("two-level HLOD did not reserve exactly two private material banks")
 	if int(state.installed_counts.navigation) != 2 \
 	or int(state.installed_counts.paths) != 1 \
 	or int(state.installed_counts.mesh_hlod) != 1:

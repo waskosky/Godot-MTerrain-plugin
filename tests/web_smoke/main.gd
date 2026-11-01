@@ -712,7 +712,7 @@ func _verify_extended_runtime() -> String:
 	or int(state.metrics.get("path_collision_installs", 0)) < 2:
 		runtime.queue_free()
 		return "web_extended bounded HLOD fade or path-collision replacement did not finish"
-	return ""
+	return await load("res://hlod_fade_probe.gd").verify(self)
 
 
 func _fixture_height(x: float, z: float) -> float:

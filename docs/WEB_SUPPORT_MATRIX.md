@@ -19,7 +19,7 @@ every native runtime subsystem works in browsers.
 | Bounded MultiMesh foliage | No | Yes | Supplied mesh; low/medium/high density ceilings; no foliage collision |
 | Supplied/precomputed navigation | No | Yes | Agent-profile validation and joined-region queries; runtime baking no |
 | Baked mesh paths | No | Yes | Opt-in bounded pre-baked shapes; no deformation or collision generation |
-| Mesh HLOD | No | Yes | One to four supplied levels, hysteresis, optional bounded cross-fade |
+| Mesh HLOD | No | Yes | One to four supplied levels, hysteresis; optional bounded alpha fade for opaque base materials without albedo textures/vertex alpha/extra passes/opacity effects; arbitrary materials retain explicit immediate swaps |
 | Native editor/sculpt/import tools | No | No | Native-only authoring surface |
 
 Both profiles require Godot 4.7 stable, WebGL2, the Compatibility renderer, a
