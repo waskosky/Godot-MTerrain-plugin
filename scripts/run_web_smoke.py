@@ -197,6 +197,7 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
                 let channelMin = 255;
                 let channelMax = 0;
                 const buckets = new Set();
+                let terrainPixels = 0;
                 for (let index = 0; index < pixels.length; index += 4) {
                     const red = pixels[index];
                     const green = pixels[index + 1];
@@ -204,6 +205,15 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
                     channelMin = Math.min(channelMin, red, green, blue);
                     channelMax = Math.max(channelMax, red, green, blue);
                     buckets.add(`${red >> 4},${green >> 4},${blue >> 4}`);
+                }
+                // The status panel starts at screen y=238. Require geometry
+                // above it; text alone must never make the terrain gate green.
+                for (let y = height - 220; y < height - 16; y++) {
+                    for (let x = 16; x < width - 16; x++) {
+                        const offset = (y * width + x) * 4;
+                        if (pixels[offset] > 12 || pixels[offset + 1] > 18
+                                || pixels[offset + 2] > 26) terrainPixels++;
+                    }
                 }
                 const capture = document.createElement("canvas");
                 capture.width = width;
@@ -226,6 +236,7 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
                     channel_min: channelMin,
                     channel_max: channelMax,
                     color_bucket_count: buckets.size,
+                    terrain_pixel_count: terrainPixels,
                     renderer,
                     vendor,
                     user_agent: navigator.userAgent,
@@ -360,6 +371,10 @@ async def run_browser(args: argparse.Namespace, url: str) -> dict[str, object]:
         or http_errors
         or not box
         or not framebuffer_capture_written
+        or (
+            args.mode == "smoke"
+            and int(frame_probe.get("terrain_pixel_count", 0)) < 1024
+        )
         or (
             args.mode == "smoke"
             and args.profile == "web_extended"

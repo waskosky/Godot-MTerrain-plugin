@@ -691,6 +691,12 @@ and the 128-material ownership ceiling. These local checks reused the unchanged
 `7c510ce` native/Web core binaries; clean-source rebuild/hosted gates still bind
 the next candidate independently. These are correctness results, not headed
 hardware or physical-mobile performance qualification.
+Frame inspection also exposed a smoke-fixture weakness: after negative-offset
+recreation its camera still targeted the old grid centre, leaving the resident
+tile out of view. The fixture now frames the admitted tile and the browser gate
+requires at least 1,024 colored geometry pixels above the status panel, so UI
+text cannot satisfy the nonblank terrain check. Local Chromium/Firefox captures
+contain 9,451/9,450 such pixels and retain the actual framebuffer.
 Exported near/far rock, moving-revision, and 256-stop four-step fixtures remain
 present. Alpha sorting/overdraw and temporary shadow limitations, representative
 memory/frame-time, production material coverage, and physical-device gates
