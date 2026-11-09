@@ -31,6 +31,35 @@
 - Secondary target: explicitly hosted threaded Web diagnostics
 - Native target: preserve existing editor and runtime capabilities
 
+### Upstream synchronization, 2026-11-09
+
+The fork integrates upstream `master` through
+`e981512d5bfbec73a82b3df2936e78c1eda1e11d` (four build-system commits).
+The registration-body/entry-shim split and native CMake frontend are retained.
+Both build frontends now consume one source-profile selector, preserving full
+native editor/runtime registration and the existing bounded Web closure.
+Generated manifests name the actual architecture and library while preserving
+universal fallbacks. The fork deliberately retains Godot 4.7 and `godot-cpp`
+`9c8aeff0f58ad030f3d1030e8262de1322cd0ccd`; upstream's 4.5 binding pin does not
+replace the validated Web tuple.
+
+Native CMake supports `full` and `runtime`, plus static embedding without a
+duplicate entry shim. The shared selector supplies `MTERRAIN_EDITOR_ENABLED`
+only when editor sources are included. HLOD authoring methods use this explicit
+capability; runtime debug no longer retains unresolved references to excluded
+editor mesh helpers. CMake propagates profile definitions to embedding clients
+so public headers and the archive agree. CMake Web builds are rejected in favor
+of the pinned SCons Web route. The existing native CI job adds CMake full
+debug/release builds and a runtime debug embedding/link/load fixture, and
+verifies the generated debug manifest against the native class registry;
+the job graph, timeout limits, and Web/device acceptance gates are unchanged.
+Local macOS full debug/release CMake compilation, full debug registration,
+runtime debug static embedding/link/loading, and the bounded SCons terrain
+integrity/collision smoke passed. Hosted clean-clone
+Web/native/browser checks remain required for merging this synchronization.
+See [upstream maintenance](UPSTREAM_MAINTENANCE.md) for contribution scope and
+consumer promotion policy.
+
 ## 1. Purpose
 
 This roadmap turns MTerrain into a reproducible, bounded, independently usable

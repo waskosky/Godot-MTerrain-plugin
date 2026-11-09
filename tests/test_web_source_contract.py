@@ -232,14 +232,10 @@ class WebSourceContractTests(unittest.TestCase):
         self.assertIn('"-ffile-prefix-map=" + web_source_mapping', sconstruct)
         self.assertIn('"-fdebug-prefix-map=" + web_source_mapping', sconstruct)
         self.assertIn('"-fmacro-prefix-map=" + web_source_mapping', sconstruct)
-        self.assertIn('("moctree.cpp", "mtool.cpp")', sconstruct)
-        for source_group in ("grass", "navmesh", "octmesh", "path", "hlod"):
-            self.assertIn(f'Glob("src/{source_group}/*.cpp")', sconstruct)
-        self.assertIn('"MTERRAIN_CORE_ONLY"', sconstruct)
-        self.assertIn('"MTERRAIN_BOUNDED_RUNTIME"', sconstruct)
-        self.assertIn('"MTERRAIN_SINGLE_THREADED"', sconstruct)
-        self.assertIn('"MTERRAIN_PROFILE_WEB_EXTENDED"', sconstruct)
-        self.assertIn('"MTERRAIN_PROFILE_WEB_CORE"', sconstruct)
+        self.assertIn('select_sources(source_dir, mterrain_profile, env["target"])', sconstruct)
+        self.assertIn('env.Append(CPPDEFINES=selection["definitions"])', sconstruct)
+        # The executable source-profile tests check the actual selected paths
+        # and definitions shared by both builders, rather than copied globs.
 
     def test_web_binding_profile_omits_editor_and_rendering_device_classes(self) -> None:
         profile = json.loads(
@@ -438,7 +434,7 @@ class WebSourceContractTests(unittest.TestCase):
 
     def test_web_core_registration_excludes_extended_classes(self) -> None:
         registration = (
-            ROOT / "gdextension" / "src" / "register_types.cpp"
+            ROOT / "gdextension" / "src" / "register.cpp"
         ).read_text(encoding="utf-8")
         include_guard = registration.index("#ifndef MTERRAIN_CORE_ONLY")
         first_extended_include = registration.index('#include "grass/mgrass.h"')

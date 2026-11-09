@@ -3,7 +3,7 @@
 #include <godot_cpp/classes/resource_loader.hpp>
 #include "../mtool.h"
 #include "mhlod_node3d.h"
-#ifdef DEBUG_ENABLED
+#ifdef MTERRAIN_EDITOR_ENABLED
 #include "../editor/masset_table.h"
 #include "../editor/mmesh_joiner.h"
 #endif
@@ -67,7 +67,7 @@ void MHlod::_bind_methods(){
     ClassDB::bind_method(D_METHOD("set_baker_path","input"), &MHlod::set_baker_path);
     ClassDB::bind_method(D_METHOD("get_baker_path"), &MHlod::get_baker_path);
     ADD_PROPERTY(PropertyInfo(Variant::STRING,"baker_path"),"set_baker_path","get_baker_path");
-    #ifdef DEBUG_ENABLED
+    #ifdef MTERRAIN_EDITOR_ENABLED
     ClassDB::bind_method(D_METHOD("get_used_mesh_ids"), &MHlod::get_used_mesh_ids);
     ClassDB::bind_method(D_METHOD("get_joined_mesh","for_triangle_mesh","best_mesh_quality"), &MHlod::get_joined_mesh);
     #endif
@@ -802,7 +802,7 @@ String MHlod::get_baker_path(){
     return String("");
     #endif
 }
-#ifdef DEBUG_ENABLED
+#ifdef MTERRAIN_EDITOR_ENABLED
 Dictionary MHlod::get_used_mesh_ids() const{
     Dictionary out;
     for(const Item& item : item_list){

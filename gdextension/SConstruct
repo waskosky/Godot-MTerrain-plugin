@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-import shutil
+from mterrain_build_profile import PROFILES, select_sources, write_manifest
 
 
 # MTerrain options are consumed before godot-cpp parses ARGUMENTS so the nested
@@ -8,10 +8,9 @@ import shutil
 mterrain_profile = ARGUMENTS.pop("mterrain_profile", "full")
 mterrain_output_dir = ARGUMENTS.pop("mterrain_output_dir", "")
 
-valid_profiles = ("full", "runtime", "web_core", "web_extended")
-if mterrain_profile not in valid_profiles:
+if mterrain_profile not in PROFILES:
     raise ValueError(
-        "mterrain_profile must be one of: " + ", ".join(valid_profiles)
+        "mterrain_profile must be one of: " + ", ".join(PROFILES)
     )
 
 # Generated wrappers contain target-width-sensitive opaque sizes. Give each
@@ -93,51 +92,22 @@ output_dir = output_dir.resolve()
 os.makedirs(output_dir, mode=0o755, exist_ok=True)
 
 env.Append(CPPPATH="src/")
-if env["precision"] == "single":
-    shutil.copy("MTerrain.txt", output_dir.joinpath("MTerrain.gdextension"))
-elif env["precision"] == "double":
-    shutil.copy("MTerrain_double.txt", output_dir.joinpath("MTerrain.gdextension"))
-else:
+if env["precision"] not in ("single", "double"):
     raise ValueError("Unsupported precision: " + str(env["precision"]))
 
-src = list(Glob("src/*.cpp"))
-src.extend(Glob("src/util/*.cpp"))
-src.extend(Glob("src/height_brushes/*.cpp"))
-src.extend(Glob("src/color_brushes/*.cpp"))
-
-if mterrain_profile in ("web_core", "web_extended"):
-    src = [
-        node for node in src
-        if node.name not in ("moctree.cpp", "mtool.cpp")
-    ]
-    env.Append(
-        CPPDEFINES=[
-            "MTERRAIN_CORE_ONLY",
-            "MTERRAIN_MEMORY_ONLY_DEFAULT",
-            "MTERRAIN_BOUNDED_RUNTIME",
-            "MTERRAIN_SINGLE_THREADED",
-        ]
-    )
-    if mterrain_profile == "web_extended":
-        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_WEB_EXTENDED"])
-    else:
-        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_WEB_CORE"])
-else:
-    src.extend(Glob("src/hlod/*.cpp"))
-    src.extend(Glob("src/grass/*.cpp"))
-    src.extend(Glob("src/navmesh/*.cpp"))
-    src.extend(Glob("src/octmesh/*.cpp"))
-    src.extend(Glob("src/path/*.cpp"))
-    if mterrain_profile == "runtime":
-        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_RUNTIME"])
-    else:
-        env.Append(CPPDEFINES=["MTERRAIN_PROFILE_FULL"])
-        if env["target"] == "template_debug":
-            print("Compiling MTerrain's full debug/editor source profile")
-            src.extend(Glob("src/editor/*.cpp"))
+selection = select_sources(source_dir, mterrain_profile, env["target"])
+src = [File(path) for path in selection["sources"]]
+env.Append(CPPDEFINES=selection["definitions"])
 
 libname = "MTerrain{}{}".format(env["suffix"], env["SHLIBSUFFIX"])
 libpath = str(output_dir.joinpath(libname))
+write_manifest(
+    source_dir / ("MTerrain.txt" if env["precision"] == "single" else "MTerrain_double.txt"),
+    output_dir / "MTerrain.gdextension",
+    env["platform"], env["target"], env["arch"],
+    ("" if env["platform"] == "windows" else "lib") + libname,
+    threads=bool(env["threads"]),
+)
 if env["platform"] == "windows":
     env.Replace(LIBPREFIX="")
 variant = "{}-{}-{}-{}-{}-{}".format(

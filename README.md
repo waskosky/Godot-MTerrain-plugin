@@ -99,6 +99,29 @@ standalone checkout writes to `build/mterrain/`; an existing
 `res://mterrain` output. Set `mterrain_output_dir` to an explicit destination
 when packaging another layout.
 
+CMake 3.19+ is also supported for native builds, using the same source-profile
+selection and pinned bindings as SCons:
+
+```sh
+cmake -S gdextension -B build/cmake/native \
+  -DGODOTCPP_TARGET=template_debug -DGODOTCPP_API_VERSION=4.7 \
+  -DCMAKE_BUILD_TYPE=Debug -DMTERRAIN_PROFILE=full
+cmake --build build/cmake/native --parallel 4
+```
+
+Use `template_release` with `Release` for native exports. `MTERRAIN_PROFILE=runtime`
+excludes editor classes while retaining the native runtime subsystems. Set
+`MTERRAIN_OUTPUT_DIR` to override the standalone `build/mterrain/` output. Both
+builders emit an exact architecture/library entry in the generated manifest,
+preserving universal fallback entries in the source manifests. An embedding
+CMake project can add its compatible `godot-cpp` target before this subdirectory;
+MTerrain then builds a static library without the GDExtension entry shim and
+exposes headers under `mterrain/`. CMake Web builds fail closed; the supported
+browser route remains `scripts/build_web.sh`.
+
+Upstream tracking and contribution boundaries are recorded in
+[upstream maintenance](docs/UPSTREAM_MAINTENANCE.md).
+
 The experimental browser artifacts use the fully pinned Godot, `godot-cpp`,
 Emscripten/emsdk, Binaryen, SCons, and Brotli tuple in
 `tools/web_toolchain.json`. Release CI resolves the matching Linux host tools

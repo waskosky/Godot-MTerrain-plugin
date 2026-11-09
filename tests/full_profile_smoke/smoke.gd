@@ -8,6 +8,11 @@ const REQUIRED_CLASSES: Array[StringName] = [
 	&"MNavigationRegion3D",
 	&"MPath",
 	&"MHlod",
+	&"MMeshJoiner",
+	&"MAssetMeshUpdater",
+	&"MAssetMesh",
+	&"MAssetMeshData",
+	&"MAssetTable",
 ]
 
 
@@ -20,6 +25,10 @@ func _run() -> void:
 	for required_class in REQUIRED_CLASSES:
 		if not ClassDB.class_exists(required_class):
 			failures.append("full profile omitted %s" % required_class)
+	if not ClassDB.class_has_method(&"MHlod", &"get_joined_mesh"):
+		failures.append("full profile omitted HLOD authoring methods")
+	if not ClassDB.class_has_method(&"MHlodScene", &"get_triangle_mesh"):
+		failures.append("full profile omitted HLOD editor geometry")
 
 	var terrain := ClassDB.instantiate(&"MTerrain") as Node3D
 	if terrain == null:

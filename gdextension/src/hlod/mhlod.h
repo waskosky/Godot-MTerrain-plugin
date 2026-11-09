@@ -188,7 +188,7 @@ class MHlod : public Resource{
 
     void set_baker_path(const String& input);
     String get_baker_path();
-    #ifdef DEBUG_ENABLED
+    #ifdef MTERRAIN_EDITOR_ENABLED
     Dictionary get_used_mesh_ids() const;
     Ref<ArrayMesh> get_joined_mesh(bool for_triangle_mesh,bool best_mesh_quality) const;
     #endif

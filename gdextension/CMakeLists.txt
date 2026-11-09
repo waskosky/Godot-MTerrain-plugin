@@ -1,0 +1,97 @@
+cmake_minimum_required(VERSION 3.19)
+project(mterrain LANGUAGES CXX)
+
+find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+set(MTERRAIN_PROFILE "full" CACHE STRING "Native MTerrain source profile (full|runtime)")
+set_property(CACHE MTERRAIN_PROFILE PROPERTY STRINGS full runtime)
+if(NOT MTERRAIN_PROFILE MATCHES "^(full|runtime)$")
+    message(FATAL_ERROR "CMake supports native full/runtime profiles; use scripts/build_web.sh for validated web_core/web_extended builds")
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    message(FATAL_ERROR "Use scripts/build_web.sh for the pinned single-threaded Web runtime")
+endif()
+
+set(IS_MAIN_CMAKE_BUILD FALSE)
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(IS_MAIN_CMAKE_BUILD TRUE)
+    add_subdirectory(godot-cpp)
+endif()
+if(NOT TARGET godot-cpp)
+    message(FATAL_ERROR "Add a compatible godot-cpp target before the embedded MTerrain subdirectory")
+endif()
+
+get_target_property(MT_TARGET godot-cpp GODOTCPP_TARGET)
+get_target_property(MT_ARCH godot-cpp GODOTCPP_ARCH)
+get_target_property(MT_PRECISION godot-cpp GODOTCPP_PRECISION)
+get_target_property(MT_PLATFORM godot-cpp GODOTCPP_PLATFORM)
+get_target_property(MT_SUFFIX godot-cpp GODOTCPP_SUFFIX)
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mterrain_build_profile.py"
+        --root "${CMAKE_CURRENT_SOURCE_DIR}" --profile "${MTERRAIN_PROFILE}" --target "${MT_TARGET}"
+    RESULT_VARIABLE profile_result OUTPUT_VARIABLE profile_json ERROR_VARIABLE profile_error
+)
+if(NOT profile_result EQUAL 0)
+    message(FATAL_ERROR "Invalid MTerrain source profile: ${profile_error}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS mterrain_build_profile.py)
+file(GLOB_RECURSE profile_inputs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+foreach(field sources definitions)
+    string(JSON count LENGTH "${profile_json}" "${field}")
+    math(EXPR last "${count} - 1")
+    set(MT_${field})
+    foreach(index RANGE 0 ${last})
+        string(JSON value GET "${profile_json}" "${field}" ${index})
+        list(APPEND MT_${field} "${value}")
+    endforeach()
+endforeach()
+
+if(IS_MAIN_CMAKE_BUILD)
+    add_library(mterrain SHARED ${MT_sources})
+else()
+    list(REMOVE_ITEM MT_sources register_types.cpp)
+    add_library(mterrain STATIC ${MT_sources})
+endif()
+target_compile_definitions(mterrain PUBLIC ${MT_definitions})
+target_link_libraries(mterrain PUBLIC godot-cpp)
+target_include_directories(mterrain PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set_target_properties(mterrain PROPERTIES CXX_STANDARD 17 CXX_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON CXX_VISIBILITY_PRESET hidden OUTPUT_NAME "MTerrain${MT_SUFFIX}")
+if(MT_PLATFORM STREQUAL "windows")
+    set_target_properties(mterrain PROPERTIES PREFIX "")
+endif()
+
+# Match SCons output ownership for standalone checkouts and embedded addons.
+if(IS_MAIN_CMAKE_BUILD)
+    get_filename_component(plugin_root "${CMAKE_CURRENT_SOURCE_DIR}" DIRECTORY)
+    get_filename_component(plugin_name "${plugin_root}" NAME)
+    get_filename_component(plugin_parent "${plugin_root}" DIRECTORY)
+    get_filename_component(parent_name "${plugin_parent}" NAME)
+    if(plugin_name STREQUAL "m_terrain" AND parent_name STREQUAL "addons")
+        get_filename_component(project_root "${plugin_parent}" DIRECTORY)
+        set(default_output "${project_root}/mterrain")
+    else()
+        set(default_output "${plugin_root}/build/mterrain")
+    endif()
+    set(MTERRAIN_OUTPUT_DIR "${default_output}" CACHE PATH "MTerrain native library/manifest output")
+    set_target_properties(mterrain PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "$<1:${MTERRAIN_OUTPUT_DIR}>"
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${MTERRAIN_OUTPUT_DIR}>")
+    set(manifest "${CMAKE_CURRENT_SOURCE_DIR}/MTerrain.txt")
+    if(MT_PRECISION STREQUAL "double")
+        set(manifest "${CMAKE_CURRENT_SOURCE_DIR}/MTerrain_double.txt")
+    endif()
+    add_custom_command(TARGET mterrain POST_BUILD
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mterrain_build_profile.py"
+            --target "${MT_TARGET}" --manifest-source "${manifest}"
+            --manifest-output "$<TARGET_FILE_DIR:mterrain>/MTerrain.gdextension"
+            --platform "${MT_PLATFORM}" --arch "${MT_ARCH}" --library "$<TARGET_FILE_NAME:mterrain>"
+        VERBATIM)
+else()
+    set(MTERRAIN_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
+    target_include_directories(mterrain INTERFACE "${MTERRAIN_INCLUDE_DIR}")
+    file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h")
+    foreach(header IN LISTS headers)
+        file(RELATIVE_PATH relative "${CMAKE_CURRENT_SOURCE_DIR}/src" "${header}")
+        configure_file("${header}" "${MTERRAIN_INCLUDE_DIR}/mterrain/${relative}" COPYONLY)
+    endforeach()
+endif()
