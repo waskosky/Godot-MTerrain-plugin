@@ -44,12 +44,18 @@ universal fallbacks. The fork deliberately retains Godot 4.7 and `godot-cpp`
 replace the validated Web tuple.
 
 Native CMake supports `full` and `runtime`, plus static embedding without a
-duplicate entry shim. CMake Web builds are rejected in favor of the pinned
-SCons Web route. The existing native CI job adds CMake full debug/release builds
-and verifies the generated debug manifest against the native class registry;
+duplicate entry shim. The shared selector supplies `MTERRAIN_EDITOR_ENABLED`
+only when editor sources are included. HLOD authoring methods use this explicit
+capability; runtime debug no longer retains unresolved references to excluded
+editor mesh helpers. CMake propagates profile definitions to embedding clients
+so public headers and the archive agree. CMake Web builds are rejected in favor
+of the pinned SCons Web route. The existing native CI job adds CMake full
+debug/release builds and a runtime debug embedding/link/load fixture, and
+verifies the generated debug manifest against the native class registry;
 the job graph, timeout limits, and Web/device acceptance gates are unchanged.
-Local macOS full debug/release CMake compilation, full debug registration, and
-the bounded SCons terrain integrity/collision smoke passed. Hosted clean-clone
+Local macOS full debug/release CMake compilation, full debug registration,
+runtime debug static embedding/link/loading, and the bounded SCons terrain
+integrity/collision smoke passed. Hosted clean-clone
 Web/native/browser checks remain required for merging this synchronization.
 See [upstream maintenance](UPSTREAM_MAINTENANCE.md) for contribution scope and
 consumer promotion policy.

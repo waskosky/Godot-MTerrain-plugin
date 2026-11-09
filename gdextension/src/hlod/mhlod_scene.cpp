@@ -9,7 +9,7 @@
 #define RS RenderingServer::get_singleton()
 
 
-#ifdef DEBUG_ENABLED
+#ifdef MTERRAIN_EDITOR_ENABLED
 #include "../editor/mmesh_joiner.h"
 #include <godot_cpp/classes/triangle_mesh.hpp>
 #endif
@@ -39,7 +39,7 @@ void MHlodScene::_bind_methods(){
     ClassDB::bind_static_method("MHlodScene",D_METHOD("get_hlod_users","hlod_path"), &MHlodScene::get_hlod_users);
 
     ClassDB::bind_static_method("MHlodScene",D_METHOD("get_debug_info"), &MHlodScene::get_debug_info);
-    #ifdef DEBUG_ENABLED
+    #ifdef MTERRAIN_EDITOR_ENABLED
     ClassDB::bind_method(D_METHOD("get_triangle_mesh"), &MHlodScene::get_triangle_mesh);
     #endif
 }
@@ -506,7 +506,7 @@ void MHlodScene::Proc::set_visibility(bool visibility){
     }
 }
 
-#ifdef DEBUG_ENABLED
+#ifdef MTERRAIN_EDITOR_ENABLED
 void MHlodScene::Proc::_get_editor_tri_mesh_info(PackedVector3Array& vertices,PackedInt32Array& indices,const Transform3D& local_transform) const{
     if(hlod.is_valid()){
         for(HashMap<int32_t,CreationInfo>::ConstIterator it=items_creation_info.begin();it!=items_creation_info.end();++it){
@@ -1082,7 +1082,7 @@ void MHlodScene::init_proc(){
 }
 
 void MHlodScene::deinit_proc(){
-    #ifdef DEBUG_ENABLED
+    #ifdef MTERRAIN_EDITOR_ENABLED
     if(cached_triangled_mesh.is_valid()){
         cached_triangled_mesh.unref();
     }
@@ -1116,7 +1116,7 @@ void MHlodScene::deinit_proc(){
     procs.clear();
 }
 
-#ifdef DEBUG_ENABLED
+#ifdef MTERRAIN_EDITOR_ENABLED
 Ref<TriangleMesh> MHlodScene::get_triangle_mesh(){
     if(procs.size()==0){
         return Ref<TriangleMesh>();

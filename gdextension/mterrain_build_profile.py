@@ -26,6 +26,7 @@ def select_sources(root: Path, profile: str, target: str) -> dict:
         patterns.extend("src/" + group + "/*.cpp" for group in NATIVE_GROUPS)
         if profile == "full" and target != "template_release":
             patterns.append("src/editor/*.cpp")
+            definitions.append("MTERRAIN_EDITOR_ENABLED")
     definitions.append("MTERRAIN_PROFILE_" + profile.upper())
     sources = {str(path.relative_to(root)) for pattern in patterns for path in root.glob(pattern)}
     if bounded:

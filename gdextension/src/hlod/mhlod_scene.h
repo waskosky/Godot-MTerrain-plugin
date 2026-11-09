@@ -16,7 +16,7 @@
 #include <godot_cpp/templates/vset.hpp>
 #include <godot_cpp/classes/worker_thread_pool.hpp>
 
-#ifdef DEBUG_ENABLED
+#ifdef MTERRAIN_EDITOR_ENABLED
 #include <godot_cpp/classes/triangle_mesh.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #endif
@@ -248,7 +248,7 @@ class MHlodScene : public Node3D {
         Ref<MHlod> hlod;
         MHlodScene* scene = nullptr;
         HashMap<int32_t,CreationInfo> items_creation_info; // key is transform index
-        #ifdef DEBUG_ENABLED
+        #ifdef MTERRAIN_EDITOR_ENABLED
         // Need local transform because editor need this and we don't have it in this struct
         void _get_editor_tri_mesh_info(PackedVector3Array& vertices,PackedInt32Array& indices,const Transform3D& local_transform) const;
         #endif
@@ -382,7 +382,7 @@ class MHlodScene : public Node3D {
     Array get_last_lod_mesh_ids_transforms();
 
     // Works only in editor
-    #ifdef DEBUG_ENABLED
+    #ifdef MTERRAIN_EDITOR_ENABLED
     Ref<TriangleMesh> cached_triangled_mesh;
     Ref<TriangleMesh> get_triangle_mesh();
     #endif

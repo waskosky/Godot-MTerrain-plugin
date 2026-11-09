@@ -51,7 +51,7 @@ else()
     list(REMOVE_ITEM MT_sources register_types.cpp)
     add_library(mterrain STATIC ${MT_sources})
 endif()
-target_compile_definitions(mterrain PRIVATE ${MT_definitions})
+target_compile_definitions(mterrain PUBLIC ${MT_definitions})
 target_link_libraries(mterrain PUBLIC godot-cpp)
 target_include_directories(mterrain PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set_target_properties(mterrain PROPERTIES CXX_STANDARD 17 CXX_EXTENSIONS OFF

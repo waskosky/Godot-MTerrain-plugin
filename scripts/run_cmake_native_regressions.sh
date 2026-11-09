@@ -47,4 +47,24 @@ for target in template_debug template_release; do
 		GODOT_BIN="$GODOT_BIN" "$ROOT_DIR/scripts/run_native_full_smoke.sh" "$library" "$output/MTerrain.gdextension"
 	fi
 done
+
+# Link the static runtime into an application-owned entry point. Building only
+# the archive would miss unresolved references to excluded authoring sources.
+embedded="$ROOT_DIR/build/cmake/embedded-runtime"
+cmake -S "$ROOT_DIR/tests/cmake_embedding" -B "$embedded" \
+	-DCMAKE_BUILD_TYPE=Debug -DGODOTCPP_TARGET=template_debug \
+	-DGODOTCPP_API_VERSION=4.7 -DGODOTCPP_ARCH="$arch" \
+	-DGODOTCPP_PRECISION=single -DGODOTCPP_THREADS=ON -DGODOTCPP_DEV_BUILD=OFF \
+	-DGODOTCPP_CUSTOM_API_FILE="$API_DIR/extension_api.json" \
+	-DGODOTCPP_BUILD_PROFILE="$ROOT_DIR/gdextension/native_full_build_profile.json"
+cmake --build "$embedded" --parallel "$JOBS"
+OUTPUT="$("$GODOT_BIN" --headless --path "$embedded/project" --script res://smoke.gd 2>&1)" || {
+	printf '%s\n' "$OUTPUT" >&2
+	exit 1
+}
+printf '%s\n' "$OUTPUT"
+if [[ "$OUTPUT" != *"MTERRAIN_EMBEDDED_RUNTIME_OK"* ]]; then
+	printf 'CMake embedding smoke did not emit its success marker.\n' >&2
+	exit 1
+fi
 printf 'MTERRAIN_CMAKE_NATIVE_REGRESSIONS_OK\n'

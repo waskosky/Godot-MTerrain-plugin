@@ -13,7 +13,7 @@
 
 
 
-#if defined(DEBUG_ENABLED) && defined(MTERRAIN_PROFILE_FULL)
+#ifdef MTERRAIN_EDITOR_ENABLED
 #include "editor/mmesh_joiner.h"
 #include "editor/masset_mesh.h"
 #include "editor/masset_mesh_updater.h"
@@ -66,7 +66,7 @@ void initialize_mterrain(ModuleInitializationLevel p_level) {
 		return;
 	}
 	
-	#if defined(DEBUG_ENABLED) && defined(MTERRAIN_PROFILE_FULL)
+	#ifdef MTERRAIN_EDITOR_ENABLED
 	ClassDB::register_class<MMeshJoiner>();
 	ClassDB::register_class<MAssetMeshUpdater>();
 	ClassDB::register_class<MAssetMesh>();

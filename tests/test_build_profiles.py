@@ -23,9 +23,12 @@ class BuildProfileTests(unittest.TestCase):
         debug = PROFILE.select_sources(EXTENSION, "full", "template_debug")
         self.assertEqual(set(debug["sources"]), all_sources | {"register_types.cpp"})
         self.assertEqual(debug["sources"].count("src/register.cpp"), 1)
+        self.assertIn("MTERRAIN_EDITOR_ENABLED", debug["definitions"])
+        self.assertNotIn("MTERRAIN_EDITOR_ENABLED", PROFILE.select_sources(EXTENSION, "runtime", "template_debug")["definitions"])
         for name in ("full", "runtime"):
             release = PROFILE.select_sources(EXTENSION, name, "template_release")
             self.assertFalse(any("/editor/" in p for p in release["sources"]))
+            self.assertNotIn("MTERRAIN_EDITOR_ENABLED", release["definitions"])
             for group in PROFILE.NATIVE_GROUPS:
                 self.assertTrue(any(p.startswith("src/" + group + "/") for p in release["sources"]))
 
