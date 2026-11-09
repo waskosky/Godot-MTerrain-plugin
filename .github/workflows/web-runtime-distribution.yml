@@ -125,7 +125,7 @@ jobs:
       - name: Install host prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes python3-venv
+          sudo apt-get install --yes python3-venv cmake
 
       - name: Restore exact host toolchain
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -141,6 +141,7 @@ jobs:
           source "$MTERRAIN_CI_TOOLS/environment.sh"
           export MTERRAIN_REQUIRE_CLEAN=1
           ./scripts/run_native_regression_builds.sh
+          ./scripts/run_cmake_native_regressions.sh
 
       - name: Retain exact native editor-load libraries for Web export
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

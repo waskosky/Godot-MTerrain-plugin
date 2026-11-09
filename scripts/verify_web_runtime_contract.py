@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -138,13 +139,22 @@ def verify() -> str:
     for profile in ("web_core", "web_extended"):
         if f'capabilities["build_profile"] = "{profile}";' not in implementation:
             fail(f"native build-profile capability drift for {profile}")
+    profile_spec = importlib.util.spec_from_file_location(
+        "mterrain_build_profile", ROOT / "gdextension" / "mterrain_build_profile.py"
+    )
+    profile_module = importlib.util.module_from_spec(profile_spec)
+    profile_spec.loader.exec_module(profile_module)
+    if 'select_sources(source_dir, mterrain_profile, env["target"])' not in sconstruct:
+        fail("SCons no longer consumes the shared source profile")
     for required_define in (
         "MTERRAIN_BOUNDED_RUNTIME",
         "MTERRAIN_MEMORY_ONLY_DEFAULT",
         "MTERRAIN_SINGLE_THREADED",
     ):
-        if required_define not in sconstruct:
-            fail(f"Web build profile no longer declares {required_define}")
+        for profile in ("web_core", "web_extended"):
+            selection = profile_module.select_sources(ROOT / "gdextension", profile, "template_debug")
+            if required_define not in selection["definitions"]:
+                fail(f"Web build profile no longer declares {required_define}")
     bound_methods = dict(
         re.findall(
             r'D_METHOD\("([A-Za-z0-9_]+)"[^;]*?&MTerrain::([A-Za-z0-9_]+)',

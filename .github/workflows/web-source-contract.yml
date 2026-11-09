@@ -23,7 +23,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py'
 
       - name: Parse Python helpers
-        run: python3 -m py_compile scripts/*.py tests/*.py
+        run: python3 -m py_compile gdextension/*.py scripts/*.py tests/*.py
 
       - name: Parse shell helpers
         run: bash -n scripts/*.sh

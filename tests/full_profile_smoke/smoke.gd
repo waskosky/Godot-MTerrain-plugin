@@ -8,6 +8,11 @@ const REQUIRED_CLASSES: Array[StringName] = [
 	&"MNavigationRegion3D",
 	&"MPath",
 	&"MHlod",
+	&"MMeshJoiner",
+	&"MAssetMeshUpdater",
+	&"MAssetMesh",
+	&"MAssetMeshData",
+	&"MAssetTable",
 ]
 
 
