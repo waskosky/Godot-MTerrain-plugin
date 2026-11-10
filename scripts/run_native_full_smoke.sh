@@ -20,6 +20,7 @@ trap 'rm -rf "$STAGE_DIR"' EXIT
 mkdir -p "$STAGE_DIR/.godot" "$STAGE_DIR/mterrain"
 cp "$ROOT_DIR/tests/full_profile_smoke/project.godot" "$STAGE_DIR/project.godot"
 cp "$ROOT_DIR/tests/full_profile_smoke/smoke.gd" "$STAGE_DIR/smoke.gd"
+cp "$ROOT_DIR/asset_manager/asset_mesh_import.gd" "$STAGE_DIR/asset_mesh_import.gd"
 cp "$ROOT_DIR/tests/full_profile_smoke/extension_list.cfg" "$STAGE_DIR/.godot/extension_list.cfg"
 if [[ -n "$MANIFEST" ]]; then
 	test -f "$MANIFEST"

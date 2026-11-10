@@ -1,5 +1,6 @@
 extends SceneTree
 
+const MeshImport = preload("res://asset_mesh_import.gd")
 
 const REQUIRED_CLASSES: Array[StringName] = [
 	&"MTerrain",
@@ -22,6 +23,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var failures: Array[String] = []
+	_check_material_sets(failures)
 	for required_class in REQUIRED_CLASSES:
 		if not ClassDB.class_exists(required_class):
 			failures.append("full profile omitted %s" % required_class)
@@ -56,3 +58,34 @@ func _run() -> void:
 		for failure in failures:
 			push_error(failure)
 		quit(1)
+
+
+func _check_material_sets(failures: Array[String]) -> void:
+	# Deliberately unequal counts detect transposing [variant][surface].
+	for dimensions in [Vector2i(3, 2), Vector2i(2, 3), Vector2i(1, 2)]:
+		var source := ImporterMesh.new()
+		for surface in dimensions.y:
+			var arrays: Array = []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
+			source.add_surface(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var sets: Array = []
+		for variant in dimensions.x:
+			var row: Array = []
+			for surface in dimensions.y:
+				row.append("variant_%d_surface_%d" % [variant, surface])
+			sets.append(row)
+		var result := MeshImport.create(source, sets)
+		if not result.ok or result.mesh.material_set_get_count() != dimensions.x or result.mesh.get_surface_count() != dimensions.y or result.material_sets != sets:
+			failures.append("material variant/surface counts changed: %s" % dimensions)
+		for invalid in [[], null, "materials", [sets[0], []], [[42]], ["surface"]]:
+			if MeshImport.create(source, invalid).ok:
+				failures.append("invalid material-set metadata was accepted")
+		# Empty names intentionally preserve an unassigned material slot.
+		var empty_names: Array = []
+		for surface in dimensions.y:
+			empty_names.append("")
+		if not MeshImport.create(source, [empty_names]).ok:
+			failures.append("unassigned material slots were rejected")
+	if MeshImport.create(null, [["material"]]).ok:
+		failures.append("missing import mesh was accepted")
