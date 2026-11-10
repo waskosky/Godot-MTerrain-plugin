@@ -62,6 +62,27 @@ consumer promotion policy.
 
 ## 1. Purpose
 
+### Companion review and native asset import, 2026-11-10
+
+Native GLB material metadata uses `[variant][surface]` rows. The importer now
+validates all rows and names before creating an `MMesh`, sizes its material sets
+by variant count, and preserves empty names for unassigned slots. The existing
+full native smoke exercises unequal variant/surface counts and malformed
+metadata through the same import helper used by `AssetIO`; no new CI job or
+process is added. This authoring fix does not select native HLOD or editor
+capabilities in the Web runtime.
+
+The external Blender/minimap companion review supplies workflow references,
+not new dependencies. Keep authoring changes in this repository: first prove
+one independently authored asset family with stable identity, manual LODs,
+material variants and a distant joined representation through native import.
+An editor terrain overview may follow a named authoring need. Full scene round
+trips, automatic simplification and broad autotiling remain deferred until a
+consumer and lossless fixtures justify them. Any Web projection still requires
+the independent bounded extended-content and device gates below. Preserve
+upstream contribution isolation and clarify external code/asset licenses before
+reuse; the reviewed companion trees contain no explicit license declaration.
+
 This roadmap turns MTerrain into a reproducible, bounded, independently usable
 terrain runtime for browser exports while preserving its native authoring and
 runtime strengths. It describes repository-local build, runtime, rendering,
