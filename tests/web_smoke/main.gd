@@ -164,7 +164,7 @@ func _ready() -> void:
 		if not collision_error.is_empty():
 			failures.append(collision_error)
 	if failures.is_empty():
-		var recovery_error := _verify_lod_and_recreate()
+		var recovery_error := await _verify_lod_and_recreate()
 		if not recovery_error.is_empty():
 			failures.append(recovery_error)
 	if failures.is_empty():
@@ -442,6 +442,9 @@ func _verify_lod_and_recreate() -> String:
 	or int(cleared.resident_tile_count) != 0 \
 	or int(cleared.loaded_region_count) != 0:
 		return "Web destroy retained runtime ownership"
+	# Keep a handle to the real renderer material for the stationary edit check.
+	var fixture_material: Resource = ClassDB.instantiate(&"MTerrainMaterial")
+	_terrain.call(&"set_terrain_material", fixture_material)
 	var negative_offset := Vector3(-512.0, 0.0, -384.0)
 	_terrain.call(&"set_offset", negative_offset)
 	camera.position = negative_offset + Vector3(128.0, 96.0, 196.0)
@@ -478,7 +481,65 @@ func _verify_lod_and_recreate() -> String:
 	camera.position = world_position + Vector3(18.0, 22.0, 28.0)
 	camera.look_at(world_position)
 	_terrain.call(&"update")
-	return ""
+	return await _verify_same_scale_upload(world_position, heights)
+
+
+func _verify_same_scale_upload(point: Vector3, heights: PackedFloat32Array) -> String:
+	var region_id: int = _terrain.call(&"get_region_id_by_world_pos", point)
+	var material: RID = _terrain.call(&"get_terrain_material").call(&"get_material", region_id)
+	var height_texture: RID = RenderingServer.material_get_param(material, &"mterrain_heightmap")
+	var normal_texture: RID = RenderingServer.material_get_param(material, &"mterrain_normals")
+	if not height_texture.is_valid() or not normal_texture.is_valid():
+		return "rendered terrain has no bound height or normal texture"
+	var edited := heights.duplicate()
+	edited[8 * 17 + 8] += 2.0
+	var result: Dictionary = _terrain.call(&"apply_height_tile", 20, 20, 17, 17, edited, false)
+	if not result.get("ok", false):
+		return "same-scale height update failed: %s" % result
+	_terrain.call(&"update")
+	if height_texture != RenderingServer.material_get_param(material, &"mterrain_heightmap") \
+	or normal_texture != RenderingServer.material_get_param(material, &"mterrain_normals"):
+		return "unchanged visual LOD replaced a texture after an in-place upload"
+	if not await _sample_bound_height(height_texture, edited[8 * 17 + 8]):
+		return "bound height texture did not contain the uploaded edit"
+	# Restore the reviewed relief for the final scene capture.
+	result = _terrain.call(&"apply_height_tile", 20, 20, 17, 17, heights, false)
+	return "" if result.get("ok", false) else "could not restore the rendered fixture"
+
+
+# Sample the float texture in a shader and read an ordinary RGBA8 framebuffer.
+# WebGL2 guarantees this readback for the color target.
+func _sample_bound_height(texture: RID, expected: float) -> bool:
+	var view := SubViewport.new()
+	view.size = Vector2i(4, 4)
+	view.disable_3d = true
+	view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(view)
+	var shader := Shader.new()
+	shader.code = """shader_type canvas_item;
+		render_mode unshaded;
+		uniform sampler2D heights : filter_nearest, repeat_disable;
+		uniform float expected;
+		void fragment() {
+			ivec2 size = textureSize(heights, 0);
+			ivec2 at = ivec2(round(vec2(size - 1) * (28.0 / 128.0)));
+			float height = texelFetch(heights, at, 0).r;
+			bool matches = size.x > 1 && abs(height - expected) < 0.001;
+			COLOR = matches ? vec4(0., 1., 0., 1.) : vec4(1., 0., 0., 1.);
+		}"""
+	var probe := ColorRect.new()
+	probe.size = Vector2(view.size)
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter(&"expected", expected)
+	probe.material = material
+	view.add_child(probe)
+	RenderingServer.material_set_param(material.get_rid(), &"heights", texture)
+	await RenderingServer.frame_post_draw
+	var frame := view.get_texture().get_image()
+	var matches := frame != null and not frame.is_empty() and frame.get_pixel(2, 2).g > 0.9
+	view.queue_free()
+	return matches
 
 
 func _make_global_plane_tile(
