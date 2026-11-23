@@ -436,32 +436,31 @@ void MImage::update_texture(int scale,bool apply_update){
 	if(is_null_image){
 		return;
 	}
+	// Outside the visible LOD the last binding stays valid. A later LOD
+	// selection uploads the latest samples before publishing the region.
 	if(scale > 0){
-		Ref<Image> new_img;
-		if(scale!=0){
-			PackedByteArray scaled_data;
-			get_data(&scaled_data,scale);
-			new_img = Image::create_from_data(current_size,current_size,false,format,scaled_data);
+		PackedByteArray samples;
+		get_data(&samples,scale);
+		Ref<Image> image = Image::create_from_data(current_size,current_size,false,format,samples);
+		if(current_scale==scale && new_tex_rid.is_valid() && (apply_update || has_texture_to_apply)){
+			RS->texture_2d_update(new_tex_rid,image,0);
 		} else {
-			new_img = Image::create_from_data(current_size,current_size,false,format,data);
-		}	
-		if(current_scale==scale && apply_update && new_tex_rid.is_valid()){ //This will improve the sculpting speed a little bit
-			RS->texture_2d_update(new_tex_rid,new_img,0);
-			return;
+			RID replacement = RS->texture_2d_create(image);
+			ERR_FAIL_COND(!replacement.is_valid());
+			if(has_texture_to_apply){
+				// The material still references old_tex_rid. Only the staged RID is obsolete.
+				RS->free_rid(new_tex_rid);
+			} else {
+				old_tex_rid = new_tex_rid;
+			}
+			new_tex_rid = replacement;
+			current_scale = scale;
+			has_texture_to_apply = true;
 		}
-		old_tex_rid = new_tex_rid;
-		new_tex_rid = RS->texture_2d_create(new_img);
-		current_scale = scale;
-	}
-	if(apply_update){
-		if(old_tex_rid.is_valid()){
-			RS->call_deferred("free_rid",old_tex_rid);
-			old_tex_rid = RID();
-		}
-		RS->material_set_param(region->get_material_rid(),uniform_name,new_tex_rid);
 		is_dirty = false;
-	} else {
-		has_texture_to_apply = true;
+	}
+	if(apply_update && has_texture_to_apply){
+		this->apply_update();
 	}
 }
 
@@ -483,7 +482,7 @@ void MImage::apply_update() {
 		}
 		RS->material_set_param(region->get_material_rid(),uniform_name,new_tex_rid);
 		has_texture_to_apply = false;
-		is_dirty = false;
+		// A sample written after staging still needs an upload.
 	}
 }
 

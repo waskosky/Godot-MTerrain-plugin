@@ -31,6 +31,16 @@
 - Secondary target: explicitly hosted threaded Web diagnostics
 - Native target: preserve existing editor and runtime capabilities
 
+### Fixed-scale texture publication, 2026-11-23
+
+An immediate upload consumes the image's dirty data at its current LOD.
+A staged replacement retains ownership of its pending material binding
+independently. Publishing that binding preserves edits made since staging.
+The exported Compatibility fixture edits a resident tile, advances the
+stationary visual LOD, checks both texture identities, and reads the edited
+height from the bound renderer texture. The existing LOD and cancellation
+fixtures continue to exercise scale changes and rollback.
+
 ### Upstream synchronization, 2026-11-09
 
 The fork integrates upstream `master` through

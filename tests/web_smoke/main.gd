@@ -442,6 +442,9 @@ func _verify_lod_and_recreate() -> String:
 	or int(cleared.resident_tile_count) != 0 \
 	or int(cleared.loaded_region_count) != 0:
 		return "Web destroy retained runtime ownership"
+	# Keep a handle to the real renderer material for the stationary edit check.
+	var fixture_material: Resource = ClassDB.instantiate(&"MTerrainMaterial")
+	_terrain.call(&"set_terrain_material", fixture_material)
 	var negative_offset := Vector3(-512.0, 0.0, -384.0)
 	_terrain.call(&"set_offset", negative_offset)
 	camera.position = negative_offset + Vector3(128.0, 96.0, 196.0)
@@ -478,7 +481,34 @@ func _verify_lod_and_recreate() -> String:
 	camera.position = world_position + Vector3(18.0, 22.0, 28.0)
 	camera.look_at(world_position)
 	_terrain.call(&"update")
-	return ""
+	return _verify_same_scale_upload(world_position, heights)
+
+
+func _verify_same_scale_upload(point: Vector3, heights: PackedFloat32Array) -> String:
+	var region_id: int = _terrain.call(&"get_region_id_by_world_pos", point)
+	var material: RID = _terrain.call(&"get_terrain_material").call(&"get_material", region_id)
+	var height_texture: RID = RenderingServer.material_get_param(material, &"mterrain_heightmap")
+	var normal_texture: RID = RenderingServer.material_get_param(material, &"mterrain_normals")
+	if not height_texture.is_valid() or not normal_texture.is_valid():
+		return "rendered terrain has no bound height or normal texture"
+	var edited := heights.duplicate()
+	edited[8 * 17 + 8] += 2.0
+	var result: Dictionary = _terrain.call(&"apply_height_tile", 20, 20, 17, 17, edited, false)
+	if not result.get("ok", false):
+		return "same-scale height update failed: %s" % result
+	_terrain.call(&"update")
+	if height_texture != RenderingServer.material_get_param(material, &"mterrain_heightmap") \
+	or normal_texture != RenderingServer.material_get_param(material, &"mterrain_normals"):
+		return "unchanged visual LOD replaced a texture after an in-place upload"
+	var image := RenderingServer.texture_2d_get(height_texture)
+	if image == null or image.is_empty() or image.get_width() <= 1:
+		return "updated height texture was unreadable"
+	var local_sample := roundi(28.0 * float(image.get_width() - 1) / 128.0)
+	if not is_equal_approx(image.get_pixel(local_sample, local_sample).r, edited[8 * 17 + 8]):
+		return "bound height texture did not contain the uploaded edit"
+	# Restore the reviewed relief for the final scene capture.
+	result = _terrain.call(&"apply_height_tile", 20, 20, 17, 17, heights, false)
+	return "" if result.get("ok", false) else "could not restore the rendered fixture"
 
 
 func _make_global_plane_tile(
